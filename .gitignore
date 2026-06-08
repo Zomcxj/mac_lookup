@@ -1,0 +1,49 @@
+# Build output
+build/
+build-*/
+debug/
+release/
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+
+# Qt
+.qmake.stash
+Makefile*
+moc_*
+qrc_*
+ui_*
+
+# Windows
+*.exe
+*.ilk
+*.pdb
+*.exp
+*.lib
+
+# Linux
+*.AppImage
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Enigma Virtual Box
+*.evb
+*_boxed.exe
+
+# Project specific
+analysis_tools/
+mac_v0/
+deploy-*/
+AGENTS.md
+
+# OS
+.DS_Store
+Thumbs.db
