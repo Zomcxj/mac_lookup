@@ -9,7 +9,6 @@
 #include <QListWidget>
 #include <QFrame>
 #include <QTimer>
-#include <QMutex>
 #include <QtConcurrent>
 
 #ifdef Q_OS_WIN

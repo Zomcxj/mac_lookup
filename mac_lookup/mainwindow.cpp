@@ -29,6 +29,20 @@
 #include <QRegularExpression>
 #endif
 
+#ifdef Q_OS_WIN
+static QString formatMacAddress(const BYTE *bytes, int len) {
+    if (len < 6) return QString();
+    return QString("%1:%2:%3:%4:%5:%6")
+        .arg(bytes[0], 2, 16, QChar('0'))
+        .arg(bytes[1], 2, 16, QChar('0'))
+        .arg(bytes[2], 2, 16, QChar('0'))
+        .arg(bytes[3], 2, 16, QChar('0'))
+        .arg(bytes[4], 2, 16, QChar('0'))
+        .arg(bytes[5], 2, 16, QChar('0'))
+        .toUpper();
+}
+#endif
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -47,18 +61,18 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_deviceMac = getAdapterMac();
     if (!m_deviceMac.isEmpty())
-        deviceMacLabel->setText("本机 MAC: " + m_deviceMac);
+        deviceMacLabel->setText(tr("本机 MAC: ") + m_deviceMac);
 }
 
 void MainWindow::setupUI() {
-    setWindowTitle("MAC Lookup - LAN + WiFi Scanner");
+    setWindowTitle(tr("MAC Lookup - LAN + WiFi Scanner"));
     setMinimumSize(520, 500);
     resize(560, 600);
 
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    QLabel *titleLabel = new QLabel("设备扫描器", centralWidget);
+    QLabel *titleLabel = new QLabel(tr("设备扫描器"), centralWidget);
     titleLabel->setObjectName("titleLabel");
     titleLabel->setAlignment(Qt::AlignCenter);
 
@@ -71,7 +85,7 @@ void MainWindow::setupUI() {
     QHBoxLayout *btnRow = new QHBoxLayout;
     btnRow->setSpacing(12);
 
-    scanButton = new QPushButton("🔍 开始扫描", scanCard);
+    scanButton = new QPushButton(tr("🔍 开始扫描"), scanCard);
     scanButton->setObjectName("scanButton");
     scanButton->setCursor(Qt::PointingHandCursor);
     scanButton->setFixedHeight(40);
@@ -79,7 +93,7 @@ void MainWindow::setupUI() {
 
     scanLayout->addLayout(btnRow);
 
-    deviceMacLabel = new QLabel("本机 MAC: 获取中...", scanCard);
+    deviceMacLabel = new QLabel(tr("本机 MAC: 获取中..."), scanCard);
     deviceMacLabel->setObjectName("deviceMacLabel");
     deviceMacLabel->setCursor(Qt::PointingHandCursor);
     deviceMacLabel->setAlignment(Qt::AlignCenter);
@@ -102,7 +116,7 @@ void MainWindow::setupUI() {
     mainLayout->addWidget(titleLabel);
     mainLayout->addWidget(scanCard, 1);
 
-    statusLabel = new QLabel("正在加载数据...");
+    statusLabel = new QLabel(tr("正在加载数据..."));
     statusLabel->setObjectName("statusLabel");
     statusBar()->addWidget(statusLabel, 1);
     statusBar()->setStyleSheet(
@@ -139,11 +153,11 @@ void MainWindow::applyStyles() {
 void MainWindow::loadData(const QString &fileName) {
     QFile file(fileName);
     if (!file.exists()) {
-        statusLabel->setText("数据文件未找到，请检查 data/mac_database.txt");
+        statusLabel->setText(tr("数据文件未找到，请检查 data/mac_database.txt"));
         return;
     }
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        statusLabel->setText("无法加载数据文件");
+        statusLabel->setText(tr("无法加载数据文件"));
         return;
     }
 
@@ -181,7 +195,7 @@ void MainWindow::loadData(const QString &fileName) {
     }
     file.close();
 
-    statusLabel->setText(QString("已加载 %1 条记录 (含 %2 家WiFi厂商)")
+    statusLabel->setText(tr("已加载 %1 条记录 (含 %2 家WiFi厂商)")
                          .arg(companyMap.size()).arg(wifiCount));
 }
 
@@ -256,7 +270,6 @@ QList<QString> MainWindow::getSubnetsToScan() {
 }
 
 QList<NetworkDevice> MainWindow::arpScan() {
-    QList<NetworkDevice> result;
     QHash<QString, NetworkDevice> deviceMap;
 
     PMIB_IPNETTABLE pIpNetTable = NULL;
@@ -275,14 +288,7 @@ QList<NetworkDevice> MainWindow::arpScan() {
                     if (macBytes[0] == 0 && macBytes[1] == 0 && macBytes[2] == 0 &&
                         macBytes[3] == 0 && macBytes[4] == 0 && macBytes[5] == 0) continue;
 
-                    QString mac = QString("%1:%2:%3:%4:%5:%6")
-                        .arg(macBytes[0], 2, 16, QChar('0'))
-                        .arg(macBytes[1], 2, 16, QChar('0'))
-                        .arg(macBytes[2], 2, 16, QChar('0'))
-                        .arg(macBytes[3], 2, 16, QChar('0'))
-                        .arg(macBytes[4], 2, 16, QChar('0'))
-                        .arg(macBytes[5], 2, 16, QChar('0'))
-                        .toUpper();
+                    QString mac = formatMacAddress(macBytes, 6);
 
                     quint32 addr = pIpNetTable->table[i].dwAddr;
                     QString ip = QString("%1.%2.%3.%4")
@@ -331,14 +337,7 @@ QList<NetworkDevice> MainWindow::arpScan() {
                     if (macBytes[0] == 0 && macBytes[1] == 0 && macBytes[2] == 0 &&
                         macBytes[3] == 0 && macBytes[4] == 0 && macBytes[5] == 0) continue;
 
-                    QString mac = QString("%1:%2:%3:%4:%5:%6")
-                        .arg(macBytes[0], 2, 16, QChar('0'))
-                        .arg(macBytes[1], 2, 16, QChar('0'))
-                        .arg(macBytes[2], 2, 16, QChar('0'))
-                        .arg(macBytes[3], 2, 16, QChar('0'))
-                        .arg(macBytes[4], 2, 16, QChar('0'))
-                        .arg(macBytes[5], 2, 16, QChar('0'))
-                        .toUpper();
+                    QString mac = formatMacAddress(macBytes, 6);
 
                     if (deviceMap.contains(mac)) continue;
 
@@ -568,14 +567,7 @@ QList<NetworkDevice> MainWindow::wifiScan() {
                                                    NULL, &pWlanBssList) == ERROR_SUCCESS
                             && pWlanBssList && pWlanBssList->dwNumberOfItems > 0) {
                             DOT11_MAC_ADDRESS &mac = pWlanBssList->wlanBssEntries[0].dot11Bssid;
-                            ap.mac = QString("%1:%2:%3:%4:%5:%6")
-                                .arg(mac[0], 2, 16, QChar('0'))
-                                .arg(mac[1], 2, 16, QChar('0'))
-                                .arg(mac[2], 2, 16, QChar('0'))
-                                .arg(mac[3], 2, 16, QChar('0'))
-                                .arg(mac[4], 2, 16, QChar('0'))
-                                .arg(mac[5], 2, 16, QChar('0'))
-                                .toUpper();
+                            ap.mac = formatMacAddress(mac, 6);
                             WlanFreeMemory(pWlanBssList);
                         }
 
@@ -744,7 +736,7 @@ QList<NetworkDevice> MainWindow::wifiScan() {
             result.clear();
             NetworkDevice warnAp;
             warnAp.type = "WiFi";
-            warnAp.ip = "(扫描需要root权限，请使用sudo运行)";
+            warnAp.ip = tr("(扫描需要root权限，请使用sudo运行)");
             warnAp.mac = "";
             warnAp.latency = 0;
             warnAp.signal = 0;
@@ -764,16 +756,16 @@ void MainWindow::startScan() {
         isScanning = true;
         discoveredDevices.clear();
         deviceList->clear();
-        scanButton->setText("⏹ 停止扫描");
+        scanButton->setText(tr("⏹ 停止扫描"));
         scanButton->setStyleSheet("#scanButton { background-color: #ea4335; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; }");
         scanTimer->start(5000);
         doScan();
     } else {
         isScanning = false;
         scanTimer->stop();
-        scanButton->setText("🔍 开始扫描");
+        scanButton->setText(tr("🔍 开始扫描"));
         scanButton->setStyleSheet("");
-        statusLabel->setText(QString("已停止扫描 | 共发现 %1 个设备").arg(discoveredDevices.size()));
+        statusLabel->setText(tr("已停止扫描 | 共发现 %1 个设备").arg(discoveredDevices.size()));
     }
 }
 
@@ -782,7 +774,7 @@ void MainWindow::doScan() {
     scanInProgress = true;
 
     if (isScanning)
-        statusLabel->setText("正在扫描...");
+        statusLabel->setText(tr("正在扫描..."));
 
     QtConcurrent::run([this]() {
         QList<NetworkDevice> lanDevices = arpScan();
@@ -796,9 +788,9 @@ void MainWindow::doScan() {
             lookupManufacturer(dev);
 
         QTimer::singleShot(0, this, [this, allDevices]() {
+            scanInProgress = false;
             onScanFinished(allDevices);
         });
-        scanInProgress = false;
     });
 }
 
@@ -840,10 +832,10 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     }
 
     if (isScanning)
-        statusLabel->setText(QString("实时扫描中 | 局域网: %1 | WiFi: %2 | 总计: %3")
+        statusLabel->setText(tr("实时扫描中 | 局域网: %1 | WiFi: %2 | 总计: %3")
                             .arg(lanCount).arg(wifiCount).arg(discoveredDevices.size()));
     else
-        statusLabel->setText(QString("局域网: %1 | WiFi: %2 | 总计: %3")
+        statusLabel->setText(tr("局域网: %1 | WiFi: %2 | 总计: %3")
                             .arg(lanCount).arg(wifiCount).arg(discoveredDevices.size()));
 }
 
@@ -884,7 +876,7 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     QLabel *typeLabel = new QLabel(dev.type == "LAN" ? "LAN" : "WiFi");
     typeLabel->setStyleSheet(typeLabelStyleTemplate.arg(dev.type == "LAN" ? "#4a90d9" : "#34a853"));
 
-    QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? "未知" : dev.ip);
+    QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? tr("未知") : dev.ip);
     ipLabel->setObjectName("cardSsid");
     ipLabel->setStyleSheet(ipLabelStyle);
 
@@ -893,7 +885,7 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     if (dev.type == "LAN") {
         if (dev.latency < 0) {
             statusColor = "#999999";
-            statusText = "离线";
+            statusText = tr("离线");
         } else if (dev.latency < 50) {
             statusColor = "#34a853";
             statusText = QString::number(dev.latency) + " ms";
@@ -929,11 +921,11 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     QHBoxLayout *bottomRow = new QHBoxLayout;
     bottomRow->setSpacing(16);
 
-    QLabel *macLabel = new QLabel(dev.mac.isEmpty() ? "未知 MAC" : dev.mac);
+    QLabel *macLabel = new QLabel(dev.mac.isEmpty() ? tr("未知 MAC") : dev.mac);
     macLabel->setObjectName("cardMac");
     macLabel->setStyleSheet(macLabelStyle);
 
-    QLabel *vendorLabel = new QLabel(dev.manufacturer.isEmpty() ? "未知厂商" : dev.manufacturer);
+    QLabel *vendorLabel = new QLabel(dev.manufacturer.isEmpty() ? tr("未知厂商") : dev.manufacturer);
     vendorLabel->setObjectName("cardVendor");
     vendorLabel->setStyleSheet(vendorLabelStyle);
 
@@ -964,20 +956,20 @@ void MainWindow::onListContextMenu(const QPoint &pos) {
     if (!ipLbl || !macLbl) return;
 
     QMenu menu(this);
-    QAction *copyMac = menu.addAction("复制 MAC 地址");
-    QAction *copyIp = menu.addAction("复制 IP/SSID");
-    QAction *copyAll = menu.addAction("复制全部");
+    QAction *copyMac = menu.addAction(tr("复制 MAC 地址"));
+    QAction *copyIp = menu.addAction(tr("复制 IP/SSID"));
+    QAction *copyAll = menu.addAction(tr("复制全部"));
 
     QAction *chosen = menu.exec(deviceList->mapToGlobal(pos));
     if (chosen == copyMac) {
         QApplication::clipboard()->setText(macLbl->text());
-        statusLabel->setText("已复制 MAC: " + macLbl->text());
+        statusLabel->setText(tr("已复制 MAC: ") + macLbl->text());
     } else if (chosen == copyIp) {
         QApplication::clipboard()->setText(ipLbl->text());
-        statusLabel->setText("已复制: " + ipLbl->text());
+        statusLabel->setText(tr("已复制: ") + ipLbl->text());
     } else if (chosen == copyAll) {
         QApplication::clipboard()->setText(ipLbl->text() + "\t" + macLbl->text());
-        statusLabel->setText("已复制: " + ipLbl->text());
+        statusLabel->setText(tr("已复制: ") + ipLbl->text());
     }
 }
 
@@ -992,12 +984,12 @@ void MainWindow::copySelected() {
     if (!ipLbl || !macLbl) return;
 
     QApplication::clipboard()->setText(ipLbl->text() + "\t" + macLbl->text());
-    statusLabel->setText("已复制到剪贴板");
+    statusLabel->setText(tr("已复制到剪贴板"));
 }
 
 void MainWindow::copyDeviceMac() {
     if (!m_deviceMac.isEmpty()) {
         QApplication::clipboard()->setText(m_deviceMac);
-        statusLabel->setText("已复制本机 MAC: " + m_deviceMac);
+        statusLabel->setText(tr("已复制本机 MAC: ") + m_deviceMac);
     }
 }
