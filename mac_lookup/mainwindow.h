@@ -13,27 +13,8 @@
 #include <QSpinBox>
 #include <QtConcurrent>
 #include <QMouseEvent>
-
-#ifdef Q_OS_WIN
-#include <windows.h>
-#include <iphlpapi.h>
-#include <icmpapi.h>
-#include <wlanapi.h>
-#endif
-
-struct CompanyInfo {
-    QString country;
-    QString companyName;
-};
-
-struct NetworkDevice {
-    QString type;        // "LAN" 或 "WiFi"
-    QString ip;          // LAN: IP地址, WiFi: SSID
-    QString mac;         // MAC地址
-    int latency;         // LAN: 延迟ms, WiFi: 0
-    int signal;          // WiFi: 信号强度dBm, LAN: 0
-    QString manufacturer;
-};
+#include "scanner.h"
+#include "oui_database.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -48,7 +29,6 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private slots:
-    void loadData(const QString &fileName);
     void startScan();
     void doScan();
     void onScanFinished(const QList<NetworkDevice> &devices);
@@ -68,13 +48,6 @@ private:
     void copyDeviceMac();
     void lookupManufacturer(NetworkDevice &dev) const;
 
-    QList<NetworkDevice> arpScan();
-    QList<NetworkDevice> wifiScan();
-    QString getAdapterMac();
-#ifdef Q_OS_WIN
-    QList<QString> getSubnetsToScan();
-#endif
-
     QPushButton *scanButton;
     QLineEdit *filterInput;
     QSpinBox *intervalSpin;
@@ -82,7 +55,7 @@ private:
     QListWidget *lanList;
     QListWidget *wifiList;
     QFrame *scanCard;
-    QHash<QString, CompanyInfo> companyMap;
+    OuiDatabase ouiDb;
     QTimer *scanTimer;
     bool isScanning;
     bool scanInProgress;
