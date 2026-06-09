@@ -10,10 +10,14 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    scanner.cpp \
+    oui_database.cpp
 
 HEADERS += \
-    mainwindow.h
+    mainwindow.h \
+    scanner.h \
+    oui_database.h
 
 win32:RC_FILE = app_icon.rc
 win32:LIBS += -liphlpapi -lws2_32 -lwlanapi -lole32
