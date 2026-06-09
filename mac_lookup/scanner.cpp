@@ -7,15 +7,59 @@
 #include <QTcpSocket>
 #include <algorithm>
 
+// ==================== Helper Functions ====================
+
+NetworkDevice createLanDevice(const QString &ip, const QString &mac) {
+    NetworkDevice dev;
+    dev.type = Lan;
+    dev.ip = ip;
+    dev.mac = mac;
+    dev.latency = 0;
+    dev.signal = 0;
+    dev.manufacturer = "";
+    return dev;
+}
+
+QString formatIpAddress(unsigned int addr) {
+    return QString("%1.%2.%3.%4")
+        .arg(addr & 0xFF).arg((addr >> 8) & 0xFF)
+        .arg((addr >> 16) & 0xFF).arg((addr >> 24) & 0xFF);
+}
+
+void sortByLatency(QList<NetworkDevice> &devices) {
+    std::sort(devices.begin(), devices.end(), [](const NetworkDevice &a, const NetworkDevice &b) {
+        bool aOnline = a.latency >= 0;
+        bool bOnline = b.latency >= 0;
+        if (aOnline != bOnline) return aOnline;
+        if (aOnline && bOnline) return a.latency < b.latency;
+        return false;
+    });
+}
+
+QList<NetworkDevice> deduplicateBySsid(const QList<NetworkDevice> &devices) {
+    QSet<QString> seen;
+    QList<NetworkDevice> result;
+    for (const NetworkDevice &dev : devices) {
+        QString key = dev.ip.isEmpty() ? dev.mac : dev.ip;
+        if (!seen.contains(key)) {
+            seen.insert(key);
+            result.append(dev);
+        }
+    }
+    return result;
+}
+
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <iphlpapi.h>
 #include <icmpapi.h>
 #include <wlanapi.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wlanapi.lib")
 #pragma comment(lib, "ole32.lib")
+#endif
 
 // Format 6 raw bytes into "XX:XX:XX:XX:XX:XX" uppercase hex string
 static QString formatMacAddress(const BYTE *bytes, int len) {
@@ -82,7 +126,12 @@ QList<QString> getSubnetsToScan() {
     return subnets;
 }
 
-// ARP scan (Windows): Read ARP table, ping broadcast to discover more devices, ping each for latency
+// ARP scan (Windows):
+// 1. Read initial ARP table from Windows API
+// 2. Ping broadcast address to trigger ARP replies from new devices
+// 3. Re-read ARP table to capture newly discovered devices
+// 4. Ping each device individually to measure latency
+// 5. Sort results: online devices first, then by latency (lowest first)
 QList<NetworkDevice> arpScan() {
     QHash<QString, NetworkDevice> deviceMap;
 
@@ -104,20 +153,8 @@ QList<NetworkDevice> arpScan() {
                         macBytes[3] == 0 && macBytes[4] == 0 && macBytes[5] == 0) continue;
 
                     QString mac = formatMacAddress(macBytes, 6);
-
-                    quint32 addr = pIpNetTable->table[i].dwAddr;
-                    QString ip = QString("%1.%2.%3.%4")
-                        .arg(addr & 0xFF).arg((addr >> 8) & 0xFF)
-                        .arg((addr >> 16) & 0xFF).arg((addr >> 24) & 0xFF);
-
-                    NetworkDevice dev;
-                    dev.type = "LAN";
-                    dev.ip = ip;
-                    dev.mac = mac;
-                    dev.latency = 0;
-                    dev.signal = 0;
-                    dev.manufacturer = "";
-                    deviceMap.insert(mac, dev);
+                    QString ip = formatIpAddress(pIpNetTable->table[i].dwAddr);
+                    deviceMap.insert(mac, createLanDevice(ip, mac));
                 }
             }
             free(pIpNetTable);
@@ -155,22 +192,10 @@ QList<NetworkDevice> arpScan() {
                         macBytes[3] == 0 && macBytes[4] == 0 && macBytes[5] == 0) continue;
 
                     QString mac = formatMacAddress(macBytes, 6);
-
                     if (deviceMap.contains(mac)) continue;
 
-                    quint32 addr = pTable2->table[i].dwAddr;
-                    QString ip = QString("%1.%2.%3.%4")
-                        .arg(addr & 0xFF).arg((addr >> 8) & 0xFF)
-                        .arg((addr >> 16) & 0xFF).arg((addr >> 24) & 0xFF);
-
-                    NetworkDevice dev;
-                    dev.type = "LAN";
-                    dev.ip = ip;
-                    dev.mac = mac;
-                    dev.latency = 0;
-                    dev.signal = 0;
-                    dev.manufacturer = "";
-                    deviceMap.insert(mac, dev);
+                    QString ip = formatIpAddress(pTable2->table[i].dwAddr);
+                    deviceMap.insert(mac, createLanDevice(ip, mac));
                 }
             }
             free(pTable2);
@@ -197,19 +222,16 @@ QList<NetworkDevice> arpScan() {
         }
     }
 
-    // Sort: online (low latency) first, offline last
-    std::sort(allDevices.begin(), allDevices.end(), [](const NetworkDevice &a, const NetworkDevice &b) {
-        bool aOnline = a.latency >= 0;
-        bool bOnline = b.latency >= 0;
-        if (aOnline != bOnline) return aOnline;
-        if (aOnline && bOnline) return a.latency < b.latency;
-        return false;
-    });
-
+    sortByLatency(allDevices);
     return allDevices;
 }
 
-// WiFi scan (Windows): Use WLAN API to scan wireless networks
+// WiFi scan (Windows):
+// 1. Open WLAN handle and enumerate wireless interfaces
+// 2. For each interface: trigger scan, wait for results, parse networks
+// 3. For each network: extract SSID, BSSID (MAC), signal quality
+// 4. Sort by signal strength (strongest first)
+// 5. Deduplicate by SSID (keep strongest signal for each network)
 QList<NetworkDevice> wifiScan() {
     QList<NetworkDevice> result;
 
@@ -241,7 +263,7 @@ QList<NetworkDevice> wifiScan() {
                         PWLAN_AVAILABLE_NETWORK pBssEntry = &pBssList->Network[j];
 
                         NetworkDevice ap;
-                        ap.type = "WiFi";
+                        ap.type = WiFi;
                         ap.latency = 0;
 
                         if (pBssEntry->dot11Ssid.uSSIDLength > 0) {
@@ -284,18 +306,7 @@ QList<NetworkDevice> wifiScan() {
         return a.signal > b.signal;
     });
 
-    // Deduplicate by SSID
-    QSet<QString> seenSsid;
-    QList<NetworkDevice> deduped;
-    for (const NetworkDevice &ap : result) {
-        QString key = ap.ip.isEmpty() ? ap.mac : ap.ip;
-        if (!seenSsid.contains(key)) {
-            seenSsid.insert(key);
-            deduped.append(ap);
-        }
-    }
-
-    return deduped;
+    return deduplicateBySsid(result);
 }
 
 #else
@@ -315,7 +326,12 @@ QString getAdapterMac() {
     return "";
 }
 
-// ARP scan (Linux): Parse /proc/net/arp, ping broadcast, re-parse for new entries, ping each for latency
+// ARP scan (Linux):
+// 1. Parse /proc/net/arp to get initial ARP table
+// 2. Ping broadcast address to trigger ARP replies
+// 3. Re-read ARP table for newly discovered devices
+// 4. Ping each device in batches of 16 to measure latency
+// 5. Sort results: online devices first, then by latency (lowest first)
 QList<NetworkDevice> arpScan() {
     QList<NetworkDevice> result;
     QHash<QString, NetworkDevice> deviceMap;
@@ -343,15 +359,7 @@ QList<NetworkDevice> arpScan() {
             QString mac = parts[3].toUpper();
 
             if (mac == "00:00:00:00:00:00") continue;
-
-            NetworkDevice dev;
-            dev.type = "LAN";
-            dev.ip = ip;
-            dev.mac = mac;
-            dev.latency = 0;
-            dev.signal = 0;
-            dev.manufacturer = "";
-            deviceMap.insert(mac, dev);
+            deviceMap.insert(mac, createLanDevice(ip, mac));
         }
     }
     arpFile.close();
@@ -384,14 +392,7 @@ QList<NetworkDevice> arpScan() {
             if (mac == "00:00:00:00:00:00") continue;
             if (deviceMap.contains(mac)) continue;
 
-            NetworkDevice dev;
-            dev.type = "LAN";
-            dev.ip = ip;
-            dev.mac = mac;
-            dev.latency = 0;
-            dev.signal = 0;
-            dev.manufacturer = "";
-            deviceMap.insert(mac, dev);
+            deviceMap.insert(mac, createLanDevice(ip, mac));
         }
     }
     arpFile.close();
@@ -428,19 +429,18 @@ QList<NetworkDevice> arpScan() {
         }
     }
 
-    // Sort: online (low latency) first, offline last
-    std::sort(allDevices.begin(), allDevices.end(), [](const NetworkDevice &a, const NetworkDevice &b) {
-        bool aOnline = a.latency >= 0;
-        bool bOnline = b.latency >= 0;
-        if (aOnline != bOnline) return aOnline;
-        if (aOnline && bOnline) return a.latency < b.latency;
-        return false;
-    });
-
+    sortByLatency(allDevices);
     return allDevices;
 }
 
-// WiFi scan (Linux): Use iwlist to scan wireless networks
+// WiFi scan (Linux):
+// 1. Find WiFi interface (wlan0, ath0, etc.)
+// 2. Get current connected network info (iwgetid)
+// 3. Run iwlist scan to discover all available networks
+// 4. Parse iwlist output to extract SSID, MAC, signal quality
+// 5. Convert signal quality to dBm: -100 + (quality * 50 / maxQuality)
+// 6. Sort by signal strength, deduplicate by SSID
+// 7. If no networks found, check if root permissions are needed
 QList<NetworkDevice> wifiScan() {
     QList<NetworkDevice> result;
 
@@ -464,7 +464,7 @@ QList<NetworkDevice> wifiScan() {
 
     if (!currentSsid.isEmpty()) {
         NetworkDevice ap;
-        ap.type = "WiFi";
+        ap.type = WiFi;
         ap.ip = currentSsid;
         ap.latency = 0;
 
@@ -559,16 +559,7 @@ QList<NetworkDevice> wifiScan() {
         return a.signal > b.signal;
     });
 
-    // Deduplicate by SSID
-    QSet<QString> seenSsid;
-    QList<NetworkDevice> deduped;
-    for (const NetworkDevice &ap : result) {
-        QString key = ap.ip.isEmpty() ? ap.mac : ap.ip;
-        if (!seenSsid.contains(key)) {
-            seenSsid.insert(key);
-            deduped.append(ap);
-        }
-    }
+    QList<NetworkDevice> deduped = deduplicateBySsid(result);
 
     // If no networks found, check if we need root permissions
     if (deduped.isEmpty() && !wifiIface.isEmpty()) {

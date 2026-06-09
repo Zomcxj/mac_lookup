@@ -1,4 +1,11 @@
 // oui_database.cpp - OUI MAC vendor database loading and lookup
+//
+// Database format:
+//   Text file: MAC_PREFIX\tCOUNTRY\tCOMPANY\tCN_NAME (4 fields)
+//   With WiFi flag: ✔\tMAC_PREFIX\tCOUNTRY\tCOMPANY\tCN_NAME (5 fields)
+//
+// Binary cache: QDataStream file with magic number 0x4F554944 ("OUID")
+//   Used to speed up subsequent loads (avoids text parsing)
 #include "oui_database.h"
 #include <QFile>
 #include <QDataStream>
