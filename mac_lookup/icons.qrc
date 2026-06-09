@@ -1,5 +1,12 @@
 <RCC>
     <qresource prefix="/">
         <file alias="icons/mac_lookup.png">data/mac_lookup.png</file>
+        <file alias="fonts/JetBrainsMono-Regular.ttf">data/fonts/JetBrainsMono-Regular.ttf</file>
+        <file alias="fonts/JetBrainsMono-Bold.ttf">data/fonts/JetBrainsMono-Bold.ttf</file>
+        <file alias="fonts/JetBrainsMono-Medium.ttf">data/fonts/JetBrainsMono-Medium.ttf</file>
+        <file alias="fonts/Inter-Regular.ttf">data/fonts/Inter-Regular.ttf</file>
+        <file alias="fonts/Inter-Bold.ttf">data/fonts/Inter-Bold.ttf</file>
+        <file alias="fonts/Inter-Medium.ttf">data/fonts/Inter-Medium.ttf</file>
+        <file alias="fonts/Inter-SemiBold.ttf">data/fonts/Inter-SemiBold.ttf</file>
     </qresource>
 </RCC>
