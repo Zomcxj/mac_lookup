@@ -10,16 +10,14 @@ int main(int argc, char *argv[])
     a.setApplicationName("MAC Lookup");
     a.setApplicationVersion("1.0");
 
-    // Register bundled fonts
-    QString fontDir = QApplication::applicationDirPath() + "/data/fonts";
-    QDir dir(fontDir);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.ttf" << "*.otf";
-        for (const QString &fontFile : dir.entryList(filters, QDir::Files)) {
-            QFontDatabase::addApplicationFont(fontDir + "/" + fontFile);
-        }
-    }
+    // Register bundled fonts (embedded in exe via Qt resources)
+    QFontDatabase::addApplicationFont(":/fonts/JetBrainsMono-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/JetBrainsMono-Bold.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/JetBrainsMono-Medium.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/Inter-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/Inter-Bold.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/Inter-Medium.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/Inter-SemiBold.ttf");
 
     // Set JetBrains Mono as default application font
     QFont appFont("JetBrains Mono", 10);
