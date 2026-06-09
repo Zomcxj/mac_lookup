@@ -209,7 +209,15 @@ log_ok "可执行文件: ${EXE_PATH}"
 log_info "[3/3] 复制资源文件..."
 mkdir -p "${OUT_DIR}/data"
 if [ -d "${SRC_DIR}/data" ]; then
-    cp -f "${SRC_DIR}/data/"* "${OUT_DIR}/data/"
+    cp -f "${SRC_DIR}/data/"* "${OUT_DIR}/data/" 2>/dev/null || true
+    # 复制子目录（如 fonts）
+    for subdir in "${SRC_DIR}/data"/*/; do
+        if [ -d "$subdir" ]; then
+            dirname=$(basename "$subdir")
+            mkdir -p "${OUT_DIR}/data/${dirname}"
+            cp -f "${subdir}"* "${OUT_DIR}/data/${dirname}/" 2>/dev/null || true
+        fi
+    done
 fi
 log_ok "资源文件复制完成"
 
