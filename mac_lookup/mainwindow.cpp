@@ -15,9 +15,6 @@
 #include <QDateTime>
 #include <QMessageBox>
 #include <QDialog>
-#include <QGraphicsView>
-#include <QGraphicsScene>
-#include <QGraphicsTextItem>
 #include <QPainter>
 #include <QTimer>
 #include <QTcpSocket>
@@ -29,16 +26,24 @@ MainWindow::MainWindow(QWidget *parent)
     scanInProgress = false;
     darkMode = false;
     dragging = false;
+    animFrame = 0;
     scanTimer = new QTimer(this);
     scanTimer->setSingleShot(false);
     connect(scanTimer, &QTimer::timeout, this, &MainWindow::doScan);
+
+    animTimer = new QTimer(this);
+    animTimer->setSingleShot(false);
+    connect(animTimer, &QTimer::timeout, [this]() {
+        QStringList frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+        animFrame = (animFrame + 1) % frames.size();
+        scanButton->setText(frames[animFrame] + " " + tr("扫描中"));
+    });
     setupUI();
     applyStyles();
 
     QString defaultPath = QApplication::applicationDirPath() + "/data/mac_database.txt";
     ouiDb.load(defaultPath);
-    statusLabel->setText(tr("已加载 %1 条记录 (含 %2 家WiFi厂商)")
-                         .arg(ouiDb.size()).arg(ouiDb.wifiVendorCount()));
+    statusLabel->setText(tr("已加载 %1 条记录").arg(ouiDb.size()));
 
     m_deviceMac = getAdapterMac();
     if (!m_deviceMac.isEmpty())
@@ -194,13 +199,6 @@ void MainWindow::setupUI() {
     darkModeButton->setFixedWidth(60);
     btnRow->addWidget(darkModeButton);
 
-    QPushButton *topologyButton = new QPushButton(tr("拓扑"), scanCard);
-    topologyButton->setObjectName("topologyButton");
-    topologyButton->setCursor(Qt::PointingHandCursor);
-    topologyButton->setFixedHeight(40);
-    topologyButton->setFixedWidth(60);
-    btnRow->addWidget(topologyButton);
-
     scanLayout->addLayout(btnRow);
 
     filterInput = new QLineEdit(scanCard);
@@ -226,6 +224,7 @@ void MainWindow::setupUI() {
     lanList->setMinimumWidth(320);
     lanList->setSpacing(4);
     lanList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    lanList->setUniformItemSizes(true);
 
     wifiList = new QListWidget(scanCard);
     wifiList->setObjectName("wifiList");
@@ -235,6 +234,7 @@ void MainWindow::setupUI() {
     wifiList->setMinimumWidth(320);
     wifiList->setSpacing(4);
     wifiList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    wifiList->setUniformItemSizes(true);
 
     QHBoxLayout *listRow = new QHBoxLayout;
     listRow->setSpacing(8);
@@ -281,7 +281,6 @@ void MainWindow::setupUI() {
     });
     connect(exportButton, &QPushButton::clicked, this, &MainWindow::exportResults);
     connect(darkModeButton, &QPushButton::clicked, this, &MainWindow::toggleDarkMode);
-    connect(topologyButton, &QPushButton::clicked, this, &MainWindow::showTopology);
     connect(lanList, &QWidget::customContextMenuRequested, this, &MainWindow::onListContextMenu);
     connect(wifiList, &QWidget::customContextMenuRequested, this, &MainWindow::onListContextMenu);
 
@@ -321,6 +320,15 @@ void MainWindow::applyStyles() {
         #scanButton:pressed { background-color: #267e3e; }
         #lanList, #wifiList { background-color: transparent; border: none; font-size: 12px; }
         #lanList::item, #wifiList::item { padding: 0px; border: none; background: transparent; }
+        #lanCard { background: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; }
+        #lanCard:hover { border-color: #4a90d9; background: #bbdefb; }
+        #wifiCard { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 8px; }
+        #wifiCard:hover { border-color: #34a853; background: #c8e6c9; }
+        #lanTypeLabel { font-size: 12px; font-weight: bold; color: #4a90d9; background: transparent; border: none; }
+        #wifiTypeLabel { font-size: 12px; font-weight: bold; color: #34a853; background: transparent; border: none; }
+        #cardSsid { font-size: 14px; font-weight: bold; color: #2d2d2d; border: none; }
+        #cardMac { font-size: 12px; color: #666666; font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; border: none; }
+        #cardVendor { font-size: 12px; color: #888888; border: none; }
         #filterInput {
             background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px;
             padding: 4px 10px; font-size: 13px; color: #333333;
@@ -336,12 +344,7 @@ void MainWindow::applyStyles() {
             border-radius: 8px; font-size: 13px;
         }
         #darkModeButton:hover { background-color: #d0d0d0; }
-        #topologyButton {
-            background-color: #e0e0e0; color: #333333; border: none;
-            border-radius: 8px; font-size: 13px;
-        }
-        #topologyButton:hover { background-color: #d0d0d0; }
-        #deviceMacLabel { color: #666666; font-size: 12px; font-family: 'Consolas', monospace; }
+        #deviceMacLabel { color: #666666; font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace; }
         #deviceMacLabel:hover { color: #4a90d9; }
         #statusLabel { color: #666666; font-size: 12px; }
         QStatusBar {
@@ -384,6 +387,15 @@ void MainWindow::toggleDarkMode() {
             #scanButton:pressed { background-color: #267e3e; }
             #lanList, #wifiList { background-color: #252525; border: none; font-size: 12px; color: #e0e0e0; }
             #lanList::item, #wifiList::item { padding: 0px; border: none; background: transparent; }
+            #lanCard { background: #1a3a4a; border: 1px solid #2a5a6a; border-radius: 8px; }
+            #lanCard:hover { border-color: #4a90d9; background: #1e4a5a; }
+            #wifiCard { background: #1a3a1a; border: 1px solid #2a5a2a; border-radius: 8px; }
+            #wifiCard:hover { border-color: #34a853; background: #1e4a1e; }
+            #lanTypeLabel { font-size: 12px; font-weight: bold; color: #64b5f6; background: transparent; border: none; }
+            #wifiTypeLabel { font-size: 12px; font-weight: bold; color: #81c784; background: transparent; border: none; }
+            #cardSsid { font-size: 14px; font-weight: bold; color: #e0e0e0; border: none; }
+            #cardMac { font-size: 12px; color: #999999; font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; border: none; }
+            #cardVendor { font-size: 12px; color: #777777; border: none; }
             #filterInput {
                 background-color: #3d3d3d; border: 1px solid #4d4d4d; border-radius: 6px;
                 padding: 4px 10px; font-size: 13px; color: #e0e0e0;
@@ -399,12 +411,7 @@ void MainWindow::toggleDarkMode() {
                 border-radius: 8px; font-size: 13px;
             }
             #darkModeButton:hover { background-color: #666666; }
-            #topologyButton {
-                background-color: #555555; color: #e0e0e0; border: none;
-                border-radius: 8px; font-size: 13px;
-            }
-            #topologyButton:hover { background-color: #666666; }
-            #deviceMacLabel { color: #999999; font-size: 12px; font-family: 'Consolas', monospace; }
+            #deviceMacLabel { color: #999999; font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace; }
             #deviceMacLabel:hover { color: #4a90d9; }
             #statusLabel { color: #999999; font-size: 12px; }
             QStatusBar {
@@ -437,6 +444,7 @@ void MainWindow::toggleDarkMode() {
                 lbl->setStyleSheet("font-size: 13px; font-weight: bold; color: #34a853; padding: 2px;");
         }
     }
+    updateAllCardStyles();
 }
 
 // ==================== Scan Control ====================
@@ -447,13 +455,15 @@ void MainWindow::startScan() {
         discoveredDevices.clear();
         lanList->clear();
         wifiList->clear();
-        scanButton->setText(tr("⏹ 停止扫描"));
         scanButton->setStyleSheet("#scanButton { background-color: #ea4335; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; }");
+        animFrame = 0;
+        animTimer->start(100);
         scanTimer->start(intervalSpin->value() * 1000);
         doScan();
     } else {
         isScanning = false;
         scanTimer->stop();
+        animTimer->stop();
         scanButton->setText(tr("🔍 开始扫描"));
         scanButton->setStyleSheet("");
         statusLabel->setText(tr("已停止扫描 | 共发现 %1 个设备").arg(discoveredDevices.size()));
@@ -463,9 +473,6 @@ void MainWindow::startScan() {
 void MainWindow::doScan() {
     if (scanInProgress) return;
     scanInProgress = true;
-
-    if (isScanning)
-        statusLabel->setText(tr("正在扫描..."));
 
     QtConcurrent::run([this]() {
         QList<NetworkDevice> lanDevices = arpScan();
@@ -546,32 +553,50 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
 
 // ==================== Device Card ====================
 
-QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
-    static const QString lanCardStyle =
-        "#deviceCardItem { background: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; }"
-        "#deviceCardItem:hover { border-color: #4a90d9; background: #bbdefb; }";
-    static const QString wifiCardStyle =
-        "#deviceCardItem { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 8px; }"
-        "#deviceCardItem:hover { border-color: #34a853; background: #c8e6c9; }";
-    static const QString typeLabelStyleTemplate =
-        "font-size: 10px; font-weight: bold; color: #ffffff; background: %1; border-radius: 4px; padding: 2px 6px; border: none;";
-    static const QString ipLabelStyle =
-        "font-size: 14px; font-weight: bold; color: #2d2d2d; border: none;";
-    static const QString statusLabelStyleTemplate =
-        "font-size: 12px; font-weight: bold; color: %1; border: none;";
-    static const QString macLabelStyle =
-        "font-size: 12px; color: #666666; font-family: 'Consolas','Courier New',monospace; border: none;";
-    static const QString vendorLabelStyle =
-        "font-size: 12px; color: #888888; border: none;";
+static void styleCard(QFrame *card, QLabel *typeLbl, QLabel *ssidLbl, QLabel *macLbl, QLabel *vendorLbl, bool isDark, bool isLan) {
+    card->setStyleSheet(isLan
+        ? (isDark ? "background:#1a3a4a;border:1px solid #2a5a6a;border-radius:8px;"
+                  : "background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;")
+        : (isDark ? "background:#1a3a1a;border:1px solid #2a5a2a;border-radius:8px;"
+                  : "background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;"));
+    typeLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;")
+        .arg(isLan ? (isDark ? "#64b5f6" : "#4a90d9") : (isDark ? "#81c784" : "#34a853")));
+    ssidLbl->setStyleSheet(QString("font-size:14px;font-weight:bold;color:%1;border:none;")
+        .arg(isDark ? "#e0e0e0" : "#2d2d2d"));
+    macLbl->setStyleSheet(QString("font-size:12px;color:%1;font-family:'JetBrains Mono',monospace;border:none;")
+        .arg(isDark ? "#999999" : "#666666"));
+    vendorLbl->setStyleSheet(QString("font-size:12px;color:%1;border:none;")
+        .arg(isDark ? "#777777" : "#888888"));
+}
 
-    QFrame *card = new QFrame;
-    card->setObjectName("deviceCardItem");
-
-    if (dev.type == "LAN") {
-        card->setStyleSheet(lanCardStyle);
-    } else {
-        card->setStyleSheet(wifiCardStyle);
+void MainWindow::updateAllCardStyles() {
+    for (QListWidget *list : {lanList, wifiList}) {
+        for (int i = 0; i < list->count(); i++) {
+            QWidget *w = list->itemWidget(list->item(i));
+            if (!w) continue;
+            QFrame *card = qobject_cast<QFrame*>(w);
+            QLabel *typeLbl = w->findChild<QLabel*>("lanTypeLabel");
+            if (!typeLbl) typeLbl = w->findChild<QLabel*>("wifiTypeLabel");
+            QLabel *ssidLbl = w->findChild<QLabel*>("cardSsid");
+            QLabel *macLbl = w->findChild<QLabel*>("cardMac");
+            QLabel *vendorLbl = w->findChild<QLabel*>("cardVendor");
+            QLabel *signalLbl = w->findChild<QLabel*>("cardSignal");
+            if (card && typeLbl && ssidLbl && macLbl && vendorLbl) {
+                styleCard(card, typeLbl, ssidLbl, macLbl, vendorLbl, darkMode, card->objectName() == "lanCard");
+            }
+            if (signalLbl) {
+                QString sc = signalLbl->styleSheet();
+                QString c = sc.contains("#34a853") ? "#34a853" : sc.contains("#fbbc05") ? "#fbbc05" : sc.contains("#ea4335") ? "#ea4335" : "#999999";
+                signalLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;").arg(c));
+            }
+        }
     }
+}
+
+QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
+    QFrame *card = new QFrame;
+    card->setObjectName(dev.type == "LAN" ? "lanCard" : "wifiCard");
+    card->setMinimumHeight(60);
 
     QVBoxLayout *layout = new QVBoxLayout(card);
     layout->setContentsMargins(14, 10, 14, 10);
@@ -581,11 +606,10 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     topRow->setSpacing(8);
 
     QLabel *typeLabel = new QLabel(dev.type == "LAN" ? "LAN" : "WiFi");
-    typeLabel->setStyleSheet(typeLabelStyleTemplate.arg(dev.type == "LAN" ? "#4a90d9" : "#34a853"));
+    typeLabel->setObjectName(dev.type == "LAN" ? "lanTypeLabel" : "wifiTypeLabel");
 
     QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? tr("未知") : dev.ip);
     ipLabel->setObjectName("cardSsid");
-    ipLabel->setStyleSheet(ipLabelStyle);
 
     QString statusColor;
     QString statusText;
@@ -618,7 +642,7 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
 
     QLabel *statusLbl = new QLabel(statusText);
     statusLbl->setObjectName("cardSignal");
-    statusLbl->setStyleSheet(statusLabelStyleTemplate.arg(statusColor));
+    statusLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;").arg(statusColor));
 
     topRow->addWidget(typeLabel);
     topRow->addWidget(ipLabel, 1);
@@ -630,17 +654,16 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
 
     QLabel *macLabel = new QLabel(dev.mac.isEmpty() ? tr("未知 MAC") : dev.mac);
     macLabel->setObjectName("cardMac");
-    macLabel->setStyleSheet(macLabelStyle);
 
     QLabel *vendorLabel = new QLabel(dev.manufacturer.isEmpty() ? tr("未知厂商") : dev.manufacturer);
     vendorLabel->setObjectName("cardVendor");
-    vendorLabel->setStyleSheet(vendorLabelStyle);
 
     bottomRow->addWidget(macLabel);
     bottomRow->addWidget(vendorLabel);
     bottomRow->addStretch();
     layout->addLayout(bottomRow);
 
+    styleCard(card, typeLabel, ipLabel, macLabel, vendorLabel, darkMode, dev.type == "LAN");
     return card;
 }
 
@@ -801,73 +824,6 @@ void MainWindow::filterDevices(const QString &text) {
 }
 
 // ==================== Topology & History ====================
-
-void MainWindow::showTopology() {
-    int totalCount = lanList->count() + wifiList->count();
-    if (totalCount == 0) {
-        statusLabel->setText(tr("没有设备可显示"));
-        return;
-    }
-
-    QDialog dialog(this);
-    dialog.setWindowTitle(tr("网络拓扑"));
-    dialog.resize(600, 400);
-
-    QGraphicsScene *scene = new QGraphicsScene(&dialog);
-    QGraphicsView *view = new QGraphicsView(scene, &dialog);
-    view->setRenderHint(QPainter::Antialiasing);
-
-    QVBoxLayout *layout = new QVBoxLayout(&dialog);
-    layout->addWidget(view);
-
-    QFont font("Arial", 8);
-    QFontMetrics fm(font);
-
-    // Local machine at center
-    QGraphicsEllipseItem *localNode = scene->addEllipse(250, 180, 80, 40, QPen(Qt::blue), QBrush(Qt::lightGray));
-    QGraphicsTextItem *localText = scene->addText(tr("本机"), font);
-    localText->setTextWidth(70);
-    localText->setPos(265, 188);
-
-    int lanX = 20;
-    int wifiX = 460;
-    int y = 10;
-    int nodeW = 110;
-    int nodeH = 35;
-
-    auto addNodes = [&](QListWidget *list, int x, bool isLan) {
-        for (int i = 0; i < list->count(); i++) {
-            QListWidgetItem *item = list->item(i);
-            QWidget *w = list->itemWidget(item);
-            if (!w) continue;
-
-            QLabel *ipLbl = w->findChild<QLabel*>("cardSsid");
-            if (!ipLbl) continue;
-
-            QString label = ipLbl->text();
-            QColor color = isLan ? QColor(74, 144, 217) : QColor(52, 168, 83);
-
-            scene->addEllipse(x, y, nodeW, nodeH, QPen(color), QBrush(color.lighter(160)));
-
-            QGraphicsTextItem *text = scene->addText(fm.elidedText(label, Qt::ElideRight, nodeW - 10), font);
-            text->setTextWidth(nodeW - 10);
-            text->setPos(x + 5, y + 8);
-
-            int lineStartX = isLan ? x + nodeW : x;
-            int lineEndX = isLan ? 250 : 330;
-            scene->addLine(lineStartX, y + nodeH / 2, lineEndX, 200, QPen(Qt::gray, 1, Qt::DashLine));
-
-            y += 45;
-            if (y > 350) y = 10;
-        }
-    };
-
-    addNodes(lanList, lanX, true);
-    y = 10;
-    addNodes(wifiList, wifiX, false);
-
-    dialog.exec();
-}
 
 void MainWindow::viewDeviceHistory(const QString &key) {
     if (!deviceHistory.contains(key) || deviceHistory[key].isEmpty()) {

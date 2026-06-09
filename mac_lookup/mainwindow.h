@@ -37,7 +37,7 @@ private slots:
     void scanPorts(const QString &ip);
     void toggleDarkMode();
     void viewDeviceHistory(const QString &key);
-    void showTopology();
+    void updateAllCardStyles();
 
 private:
     void setupUI();
@@ -57,6 +57,8 @@ private:
     QFrame *scanCard;
     OuiDatabase ouiDb;
     QTimer *scanTimer;
+    QTimer *animTimer;
+    int animFrame;
     bool isScanning;
     bool scanInProgress;
     QLabel *deviceMacLabel;

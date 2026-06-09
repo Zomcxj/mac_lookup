@@ -1,14 +1,22 @@
 // oui_database.cpp - OUI MAC vendor database loading and lookup
 #include "oui_database.h"
 #include <QFile>
+#include <QDataStream>
 #include <QTextStream>
 #include <QRegularExpression>
+#include <QDir>
 
-void OuiDatabase::load(const QString &fileName) {
+void OuiDatabase::load(const QString &fileName, bool useCache) {
     m_data.clear();
     m_wifiCount = 0;
     m_data.reserve(25000);
 
+    // Try binary cache first (faster)
+    QString cacheFile = fileName + ".cache";
+    if (useCache && loadCache(cacheFile))
+        return;
+
+    // Parse text file
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
@@ -47,6 +55,57 @@ void OuiDatabase::load(const QString &fileName) {
         if (!mac.isEmpty())
             m_data.insert(mac, {fields[1 + offset], fields[3 + offset]});
     }
+    file.close();
+
+    // Save binary cache for faster subsequent loads
+    saveCache(cacheFile);
+}
+
+bool OuiDatabase::loadCache(const QString &cacheFile) {
+    QFile file(cacheFile);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    QDataStream in(&file);
+    in.setVersion(QDataStream::Qt_5_12);
+
+    quint32 magic;
+    in >> magic;
+    if (magic != 0x4F554944)  // "OUID"
+        return false;
+
+    quint32 count, wifiCount;
+    in >> count >> wifiCount;
+
+    for (quint32 i = 0; i < count; i++) {
+        QString key;
+        CompanyInfo info;
+        in >> key >> info.country >> info.companyName;
+        m_data.insert(key, info);
+    }
+    m_wifiCount = (int)wifiCount;
+
+    file.close();
+    return true;
+}
+
+void OuiDatabase::saveCache(const QString &cacheFile) {
+    QFile file(cacheFile);
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+
+    QDataStream out(&file);
+    out.setVersion(QDataStream::Qt_5_12);
+
+    out << (quint32)0x4F554944;  // "OUID" magic
+    out << (quint32)m_data.size() << (quint32)m_wifiCount;
+
+    auto it = m_data.constBegin();
+    while (it != m_data.constEnd()) {
+        out << it.key() << it.value().country << it.value().companyName;
+        ++it;
+    }
+
     file.close();
 }
 
