@@ -1,5 +1,6 @@
 // mainwindow.cpp - UI and main logic
 #include "mainwindow.h"
+#include "thememanager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTextStream>
@@ -293,157 +294,12 @@ void MainWindow::setupUI() {
 }
 
 void MainWindow::applyStyles() {
-    setStyleSheet(R"(
-        QMainWindow {
-            background: transparent;
-        }
-        #centralWidget { background: transparent; }
-        #titleBar {
-            background-color: #f0f0f0;
-            border-top-left-radius: 12px; border-top-right-radius: 12px;
-            border-bottom: 1px solid #d0d0d0;
-        }
-        #titleText { color: #333333; font-size: 13px; font-weight: bold; background: transparent; }
-        #minBtn, #maxBtn, #closeBtn {
-            background: transparent; border: none; font-size: 14px; color: #666666;
-            border-radius: 4px;
-        }
-        #minBtn:hover, #maxBtn:hover { background-color: #e0e0e0; }
-        #closeBtn:hover { background-color: #e81123; color: #ffffff; }
-        #titleLabel { color: #2d2d2d; font-size: 18px; font-weight: bold; }
-        #scanCard { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; }
-        #scanButton {
-            background-color: #34a853; color: #ffffff; border: none;
-            border-radius: 8px; font-size: 14px; font-weight: bold;
-        }
-        #scanButton:hover { background-color: #2d9248; }
-        #scanButton:pressed { background-color: #267e3e; }
-        #lanList, #wifiList { background-color: transparent; border: none; font-size: 12px; }
-        #lanList::item, #wifiList::item { padding: 0px; border: none; background: transparent; }
-        #lanCard { background: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; }
-        #lanCard:hover { border-color: #4a90d9; background: #bbdefb; }
-        #wifiCard { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 8px; }
-        #wifiCard:hover { border-color: #34a853; background: #c8e6c9; }
-        #lanTypeLabel { font-size: 12px; font-weight: bold; color: #4a90d9; background: transparent; border: none; }
-        #wifiTypeLabel { font-size: 12px; font-weight: bold; color: #34a853; background: transparent; border: none; }
-        #cardSsid { font-size: 14px; font-weight: bold; color: #2d2d2d; border: none; }
-        #cardMac { font-size: 12px; color: #666666; font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; border: none; }
-        #cardVendor { font-size: 12px; color: #888888; border: none; }
-        #filterInput {
-            background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px;
-            padding: 4px 10px; font-size: 13px; color: #333333;
-        }
-        #filterInput:focus { border-color: #4a90d9; }
-        #exportButton {
-            background-color: #4a90d9; color: #ffffff; border: none;
-            border-radius: 8px; font-size: 13px;
-        }
-        #exportButton:hover { background-color: #357abd; }
-        #darkModeButton {
-            background-color: #e0e0e0; color: #333333; border: none;
-            border-radius: 8px; font-size: 13px;
-        }
-        #darkModeButton:hover { background-color: #d0d0d0; }
-        #deviceMacLabel { color: #666666; font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace; }
-        #deviceMacLabel:hover { color: #4a90d9; }
-        #statusLabel { color: #666666; font-size: 12px; }
-        QStatusBar {
-            background: #f0f0f0;
-            border-top: 1px solid #d0d0d0;
-            border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
-            min-height: 22px;
-        }
-        QStatusBar::item { border: none; }
-    )");
+    setStyleSheet(ThemeManager::lightSheet());
 }
 
 void MainWindow::toggleDarkMode() {
     darkMode = !darkMode;
-    if (darkMode) {
-        setStyleSheet(R"(
-            QMainWindow {
-                background: transparent;
-            }
-            #centralWidget { background: transparent; }
-            #titleBar {
-                background-color: #2d2d2d;
-                border-top-left-radius: 12px; border-top-right-radius: 12px;
-                border-bottom: 1px solid #3d3d3d;
-            }
-            #titleText { color: #e0e0e0; font-size: 13px; font-weight: bold; }
-            #minBtn, #maxBtn, #closeBtn {
-                background: transparent; border: none; font-size: 14px; color: #999999;
-                border-radius: 4px;
-            }
-            #minBtn:hover, #maxBtn:hover { background-color: #3d3d3d; }
-            #closeBtn:hover { background-color: #e81123; color: #ffffff; }
-            #titleLabel { color: #e0e0e0; font-size: 18px; font-weight: bold; }
-            #scanCard { background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 10px; }
-            #scanButton {
-                background-color: #34a853; color: #ffffff; border: none;
-                border-radius: 8px; font-size: 14px; font-weight: bold;
-            }
-            #scanButton:hover { background-color: #2d9248; }
-            #scanButton:pressed { background-color: #267e3e; }
-            #lanList, #wifiList { background-color: #252525; border: none; font-size: 12px; color: #e0e0e0; }
-            #lanList::item, #wifiList::item { padding: 0px; border: none; background: transparent; }
-            #lanCard { background: #1a3a4a; border: 1px solid #2a5a6a; border-radius: 8px; }
-            #lanCard:hover { border-color: #4a90d9; background: #1e4a5a; }
-            #wifiCard { background: #1a3a1a; border: 1px solid #2a5a2a; border-radius: 8px; }
-            #wifiCard:hover { border-color: #34a853; background: #1e4a1e; }
-            #lanTypeLabel { font-size: 12px; font-weight: bold; color: #64b5f6; background: transparent; border: none; }
-            #wifiTypeLabel { font-size: 12px; font-weight: bold; color: #81c784; background: transparent; border: none; }
-            #cardSsid { font-size: 14px; font-weight: bold; color: #e0e0e0; border: none; }
-            #cardMac { font-size: 12px; color: #999999; font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; border: none; }
-            #cardVendor { font-size: 12px; color: #777777; border: none; }
-            #filterInput {
-                background-color: #3d3d3d; border: 1px solid #4d4d4d; border-radius: 6px;
-                padding: 4px 10px; font-size: 13px; color: #e0e0e0;
-            }
-            #filterInput:focus { border-color: #4a90d9; }
-            #exportButton {
-                background-color: #4a90d9; color: #ffffff; border: none;
-                border-radius: 8px; font-size: 13px;
-            }
-            #exportButton:hover { background-color: #357abd; }
-            #darkModeButton {
-                background-color: #555555; color: #e0e0e0; border: none;
-                border-radius: 8px; font-size: 13px;
-            }
-            #darkModeButton:hover { background-color: #666666; }
-            #deviceMacLabel { color: #999999; font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace; }
-            #deviceMacLabel:hover { color: #4a90d9; }
-            #statusLabel { color: #999999; font-size: 12px; }
-            QStatusBar {
-                background: #2d2d2d; border-top: 1px solid #3d3d3d;
-                border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
-                min-height: 22px;
-            }
-            QStatusBar::item { border: none; }
-            QSpinBox { background-color: #3d3d3d; color: #e0e0e0; border: 1px solid #4d4d4d; border-radius: 4px; }
-            QLabel { color: #e0e0e0; }
-            QLabel#intervalLabel { color: #999999; font-size: 12px; }
-            QGraphicsView { background-color: #252525; border: none; }
-        )");
-        // Update LAN/WiFi header colors for dark mode
-        QList<QLabel*> labels = scanCard->findChildren<QLabel*>();
-        for (QLabel *lbl : labels) {
-            if (lbl->text().contains("LAN"))
-                lbl->setStyleSheet("font-size: 13px; font-weight: bold; color: #64b5f6; padding: 2px; background: transparent;");
-            else if (lbl->text().contains("WiFi"))
-                lbl->setStyleSheet("font-size: 13px; font-weight: bold; color: #81c784; padding: 2px; background: transparent;");
-        }
-    } else {
-        applyStyles();
-        // Restore LAN/WiFi header colors
-        QList<QLabel*> labels = scanCard->findChildren<QLabel*>();
-        for (QLabel *lbl : labels) {
-            if (lbl->text().contains("LAN"))
-                lbl->setStyleSheet("font-size: 13px; font-weight: bold; color: #4a90d9; padding: 2px;");
-            else if (lbl->text().contains("WiFi"))
-                lbl->setStyleSheet("font-size: 13px; font-weight: bold; color: #34a853; padding: 2px;");
-        }
-    }
+    setStyleSheet(darkMode ? ThemeManager::darkSheet() : ThemeManager::lightSheet());
     updateAllCardStyles();
 }
 
@@ -522,13 +378,13 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
         newKeys.insert(key);
 
         if (discoveredDevices.contains(key)) {
-            if (dev.type == "LAN") lanCount++;
+            if (dev.type == Lan) lanCount++;
             else wifiCount++;
             continue;
         }
         discoveredDevices.insert(key);
 
-        if (dev.type == "LAN") lanCount++;
+        if (dev.type == Lan) lanCount++;
         else wifiCount++;
 
         deviceHistory[key].append(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") + " online");
@@ -538,7 +394,7 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
         item->setData(Qt::UserRole, key);
         item->setSizeHint(card->sizeHint());
 
-        QListWidget *targetList = (dev.type == "LAN") ? lanList : wifiList;
+        QListWidget *targetList = (dev.type == Lan) ? lanList : wifiList;
         targetList->addItem(item);
         targetList->setItemWidget(item, card);
     }
@@ -554,19 +410,11 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
 // ==================== Device Card ====================
 
 static void styleCard(QFrame *card, QLabel *typeLbl, QLabel *ssidLbl, QLabel *macLbl, QLabel *vendorLbl, bool isDark, bool isLan) {
-    card->setStyleSheet(isLan
-        ? (isDark ? "background:#1a3a4a;border:1px solid #2a5a6a;border-radius:8px;"
-                  : "background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;")
-        : (isDark ? "background:#1a3a1a;border:1px solid #2a5a2a;border-radius:8px;"
-                  : "background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;"));
-    typeLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;")
-        .arg(isLan ? (isDark ? "#64b5f6" : "#4a90d9") : (isDark ? "#81c784" : "#34a853")));
-    ssidLbl->setStyleSheet(QString("font-size:14px;font-weight:bold;color:%1;border:none;")
-        .arg(isDark ? "#e0e0e0" : "#2d2d2d"));
-    macLbl->setStyleSheet(QString("font-size:12px;color:%1;font-family:'JetBrains Mono',monospace;border:none;")
-        .arg(isDark ? "#999999" : "#666666"));
-    vendorLbl->setStyleSheet(QString("font-size:12px;color:%1;border:none;")
-        .arg(isDark ? "#777777" : "#888888"));
+    card->setStyleSheet(ThemeManager::cardStyle(isLan, isDark));
+    typeLbl->setStyleSheet(ThemeManager::typeLabelStyle(isLan, isDark));
+    ssidLbl->setStyleSheet(ThemeManager::ssidStyle(isDark));
+    macLbl->setStyleSheet(ThemeManager::macStyle(isDark));
+    vendorLbl->setStyleSheet(ThemeManager::vendorStyle(isDark));
 }
 
 void MainWindow::updateAllCardStyles() {
@@ -587,7 +435,7 @@ void MainWindow::updateAllCardStyles() {
             if (signalLbl) {
                 QString sc = signalLbl->styleSheet();
                 QString c = sc.contains("#34a853") ? "#34a853" : sc.contains("#fbbc05") ? "#fbbc05" : sc.contains("#ea4335") ? "#ea4335" : "#999999";
-                signalLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;").arg(c));
+                signalLbl->setStyleSheet(ThemeManager::signalStyle(c));
             }
         }
     }
@@ -595,7 +443,7 @@ void MainWindow::updateAllCardStyles() {
 
 QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     QFrame *card = new QFrame;
-    card->setObjectName(dev.type == "LAN" ? "lanCard" : "wifiCard");
+    card->setObjectName(dev.type == Lan ? "lanCard" : "wifiCard");
     card->setMinimumHeight(60);
 
     QVBoxLayout *layout = new QVBoxLayout(card);
@@ -605,15 +453,15 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     QHBoxLayout *topRow = new QHBoxLayout;
     topRow->setSpacing(8);
 
-    QLabel *typeLabel = new QLabel(dev.type == "LAN" ? "LAN" : "WiFi");
-    typeLabel->setObjectName(dev.type == "LAN" ? "lanTypeLabel" : "wifiTypeLabel");
+    QLabel *typeLabel = new QLabel(dev.type == Lan ? "LAN" : "WiFi");
+    typeLabel->setObjectName(dev.type == Lan ? "lanTypeLabel" : "wifiTypeLabel");
 
     QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? tr("未知") : dev.ip);
     ipLabel->setObjectName("cardSsid");
 
     QString statusColor;
     QString statusText;
-    if (dev.type == "LAN") {
+    if (dev.type == Lan) {
         if (dev.latency < 0) {
             statusColor = "#999999";
             statusText = tr("离线");
@@ -663,7 +511,7 @@ QWidget* MainWindow::createDeviceCard(const NetworkDevice &dev) {
     bottomRow->addStretch();
     layout->addLayout(bottomRow);
 
-    styleCard(card, typeLabel, ipLabel, macLabel, vendorLabel, darkMode, dev.type == "LAN");
+    styleCard(card, typeLabel, ipLabel, macLabel, vendorLabel, darkMode, dev.type == Lan);
     return card;
 }
 

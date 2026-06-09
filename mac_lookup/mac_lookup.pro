@@ -6,18 +6,21 @@ TARGET = mac_lookup
 TEMPLATE = app
 CONFIG += utf8_source
 
+QMAKE_CXXFLAGS += -Wall -Wextra
 DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
     scanner.cpp \
-    oui_database.cpp
+    oui_database.cpp \
+    thememanager.cpp
 
 HEADERS += \
     mainwindow.h \
     scanner.h \
-    oui_database.h
+    oui_database.h \
+    thememanager.h
 
 win32:RC_FILE = app_icon.rc
 win32:LIBS += -liphlpapi -lws2_32 -lwlanapi -lole32
