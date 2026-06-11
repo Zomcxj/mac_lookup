@@ -193,13 +193,6 @@ void MainWindow::setupUI() {
     exportButton->setFixedWidth(60);
     btnRow->addWidget(exportButton);
 
-    QPushButton *darkModeButton = new QPushButton(tr("暗色"), scanCard);
-    darkModeButton->setObjectName("darkModeButton");
-    darkModeButton->setCursor(Qt::PointingHandCursor);
-    darkModeButton->setFixedHeight(40);
-    darkModeButton->setFixedWidth(60);
-    btnRow->addWidget(darkModeButton);
-
     QPushButton *importButton = new QPushButton(tr("导入"), scanCard);
     importButton->setObjectName("exportButton");
     importButton->setCursor(Qt::PointingHandCursor);
@@ -220,6 +213,13 @@ void MainWindow::setupUI() {
     vulnButton->setFixedHeight(40);
     vulnButton->setFixedWidth(60);
     btnRow->addWidget(vulnButton);
+
+    QPushButton *darkModeButton = new QPushButton(tr("暗色"), scanCard);
+    darkModeButton->setObjectName("darkModeButton");
+    darkModeButton->setCursor(Qt::PointingHandCursor);
+    darkModeButton->setFixedHeight(40);
+    darkModeButton->setFixedWidth(60);
+    btnRow->addWidget(darkModeButton);
 
     scanLayout->addLayout(btnRow);
 
@@ -825,9 +825,8 @@ void MainWindow::runSpeedTest() {
         statusLabel->setText(status);
     });
     connect(test, &SpeedTest::resultReady, this, [this, test](const SpeedTest::Result &result) {
-        statusLabel->setText(tr("下载: %1 Mbps | 上传: %2 Mbps | 延迟: %3 ms")
+        statusLabel->setText(tr("下载: %1 Mbps | 延迟: %2 ms")
             .arg(result.downloadMbps, 0, 'f', 2)
-            .arg(result.uploadMbps, 0, 'f', 2)
             .arg(result.latencyMs));
         test->deleteLater();
     });
@@ -835,10 +834,7 @@ void MainWindow::runSpeedTest() {
         statusLabel->setText(tr("测速失败: %1").arg(msg));
         test->deleteLater();
     });
-
-    QtConcurrent::run([test]() {
-        test->start();
-    });
+    test->start();
 }
 
 // ==================== Wake-on-LAN ====================
