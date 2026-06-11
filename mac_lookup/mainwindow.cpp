@@ -200,6 +200,27 @@ void MainWindow::setupUI() {
     darkModeButton->setFixedWidth(60);
     btnRow->addWidget(darkModeButton);
 
+    QPushButton *importButton = new QPushButton(tr("导入"), scanCard);
+    importButton->setObjectName("exportButton");
+    importButton->setCursor(Qt::PointingHandCursor);
+    importButton->setFixedHeight(40);
+    importButton->setFixedWidth(60);
+    btnRow->addWidget(importButton);
+
+    QPushButton *speedButton = new QPushButton(tr("测速"), scanCard);
+    speedButton->setObjectName("exportButton");
+    speedButton->setCursor(Qt::PointingHandCursor);
+    speedButton->setFixedHeight(40);
+    speedButton->setFixedWidth(60);
+    btnRow->addWidget(speedButton);
+
+    QPushButton *vulnButton = new QPushButton(tr("漏洞"), scanCard);
+    vulnButton->setObjectName("exportButton");
+    vulnButton->setCursor(Qt::PointingHandCursor);
+    vulnButton->setFixedHeight(40);
+    vulnButton->setFixedWidth(60);
+    btnRow->addWidget(vulnButton);
+
     scanLayout->addLayout(btnRow);
 
     filterInput = new QLineEdit(scanCard);
@@ -282,6 +303,9 @@ void MainWindow::setupUI() {
     });
     connect(exportButton, &QPushButton::clicked, this, &MainWindow::exportResults);
     connect(darkModeButton, &QPushButton::clicked, this, &MainWindow::toggleDarkMode);
+    connect(importButton, &QPushButton::clicked, this, &MainWindow::importResults);
+    connect(speedButton, &QPushButton::clicked, this, &MainWindow::runSpeedTest);
+    connect(vulnButton, &QPushButton::clicked, this, &MainWindow::scanVulnerabilities);
     connect(lanList, &QWidget::customContextMenuRequested, this, &MainWindow::onListContextMenu);
     connect(wifiList, &QWidget::customContextMenuRequested, this, &MainWindow::onListContextMenu);
 
@@ -542,6 +566,9 @@ void MainWindow::onListContextMenu(const QPoint &pos) {
     QAction *copyAll = menu.addAction(tr("复制全部"));
     menu.addSeparator();
     QAction *portScan = menu.addAction(tr("端口扫描"));
+    QAction *pingAct = menu.addAction(tr("Ping"));
+    QAction *traceAct = menu.addAction(tr("Traceroute"));
+    QAction *wakeAct = menu.addAction(tr("Wake-on-LAN"));
     QAction *viewHistory = menu.addAction(tr("查看在线历史"));
 
     QAction *chosen = menu.exec(senderList->mapToGlobal(pos));
@@ -556,9 +583,17 @@ void MainWindow::onListContextMenu(const QPoint &pos) {
         statusLabel->setText(tr("已复制: ") + ipLbl->text());
     } else if (chosen == portScan) {
         QString ip = ipLbl->text();
-        if (!ip.isEmpty()) {
-            scanPorts(ip);
-        }
+        if (!ip.isEmpty()) scanPorts(ip);
+    } else if (chosen == pingAct) {
+        QString ip = ipLbl->text();
+        if (!ip.isEmpty()) pingDevice(ip);
+    } else if (chosen == traceAct) {
+        QString ip = ipLbl->text();
+        if (!ip.isEmpty()) tracerouteDevice(ip);
+    } else if (chosen == wakeAct) {
+        QString mac = macLbl->text();
+        QString ip = ipLbl->text();
+        if (!mac.isEmpty()) wakeDevice(mac, ip);
     } else if (chosen == viewHistory) {
         QString key = item->data(Qt::UserRole).toString();
         viewDeviceHistory(key);
@@ -718,6 +753,196 @@ void MainWindow::scanPorts(const QString &ip) {
                 QStringList portStrs;
                 for (int p : openPorts) portStrs << QString::number(p);
                 statusLabel->setText(tr("端口扫描完成: %1 - 开放端口: %2").arg(ip).arg(portStrs.join(", ")));
+            }
+        });
+    });
+}
+
+// ==================== Import/Export ====================
+
+void MainWindow::importResults() {
+    QString filePath = QFileDialog::getOpenFileName(this, tr("导入扫描结果"),
+        QString(), "CSV (*.csv);;All Files (*)");
+    if (filePath.isEmpty()) return;
+
+    QList<NetworkDevice> imported = ScanImporter::importCsv(filePath);
+    if (imported.isEmpty()) {
+        statusLabel->setText(tr("导入失败或文件为空"));
+        return;
+    }
+
+    // Merge with existing devices
+    QList<NetworkDevice> existing;
+    for (int i = 0; i < lanList->count(); i++) {
+        QWidget *w = lanList->itemWidget(lanList->item(i));
+        if (!w) continue;
+        NetworkDevice dev;
+        dev.type = Lan;
+        dev.ip = w->findChild<QLabel*>("cardSsid")->text();
+        dev.mac = w->findChild<QLabel*>("cardMac")->text();
+        existing.append(dev);
+    }
+    for (int i = 0; i < wifiList->count(); i++) {
+        QWidget *w = wifiList->itemWidget(wifiList->item(i));
+        if (!w) continue;
+        NetworkDevice dev;
+        dev.type = WiFi;
+        dev.ip = w->findChild<QLabel*>("cardSsid")->text();
+        dev.mac = w->findChild<QLabel*>("cardMac")->text();
+        existing.append(dev);
+    }
+
+    QList<NetworkDevice> merged = ScanImporter::mergeDevices(existing, imported);
+
+    // Clear and rebuild lists
+    lanList->clear();
+    wifiList->clear();
+    discoveredDevices.clear();
+
+    for (const NetworkDevice &dev : merged) {
+        QWidget *card = createDeviceCard(dev);
+        QListWidgetItem *item = new QListWidgetItem();
+        QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
+        item->setData(Qt::UserRole, key);
+        item->setSizeHint(card->sizeHint());
+        discoveredDevices.insert(key);
+
+        QListWidget *targetList = (dev.type == Lan) ? lanList : wifiList;
+        targetList->addItem(item);
+        targetList->setItemWidget(item, card);
+    }
+
+    statusLabel->setText(tr("已导入 %1 个设备，总计 %2 个").arg(imported.size()).arg(merged.size()));
+}
+
+// ==================== Speed Test ====================
+
+void MainWindow::runSpeedTest() {
+    statusLabel->setText(tr("正在测速..."));
+
+    SpeedTest *test = new SpeedTest(this);
+    connect(test, &SpeedTest::progress, this, [this](const QString &status) {
+        statusLabel->setText(status);
+    });
+    connect(test, &SpeedTest::resultReady, this, [this, test](const SpeedTest::Result &result) {
+        statusLabel->setText(tr("下载: %1 Mbps | 上传: %2 Mbps | 延迟: %3 ms")
+            .arg(result.downloadMbps, 0, 'f', 2)
+            .arg(result.uploadMbps, 0, 'f', 2)
+            .arg(result.latencyMs));
+        test->deleteLater();
+    });
+    connect(test, &SpeedTest::error, this, [this, test](const QString &msg) {
+        statusLabel->setText(tr("测速失败: %1").arg(msg));
+        test->deleteLater();
+    });
+
+    QtConcurrent::run([test]() {
+        test->start();
+    });
+}
+
+// ==================== Wake-on-LAN ====================
+
+void MainWindow::wakeDevice(const QString &mac, const QString &ip) {
+    statusLabel->setText(tr("正在唤醒 %1 ...").arg(ip));
+
+    QtConcurrent::run([this, mac, ip]() {
+        bool success = WakeOnLan::wakeAndVerify(mac, ip);
+        QTimer::singleShot(0, this, [this, ip, success]() {
+            if (success) {
+                statusLabel->setText(tr("设备 %1 已唤醒").arg(ip));
+            } else {
+                statusLabel->setText(tr("唤醒失败: %1 (设备可能不支持 WoL)").arg(ip));
+            }
+        });
+    });
+}
+
+// ==================== Ping/Traceroute ====================
+
+void MainWindow::pingDevice(const QString &ip) {
+    statusLabel->setText(tr("正在 Ping %1 ...").arg(ip));
+
+    NetDiag *diag = new NetDiag(this);
+    connect(diag, &NetDiag::lineReady, this, [this](const QString &line) {
+        statusLabel->setText(line.trimmed().left(80));
+    });
+    connect(diag, &NetDiag::finished, this, [this, diag](int code) {
+        Q_UNUSED(code);
+        diag->deleteLater();
+    });
+
+    diag->ping(ip, 4);
+}
+
+void MainWindow::tracerouteDevice(const QString &ip) {
+    statusLabel->setText(tr("正在 Traceroute %1 ...").arg(ip));
+
+    NetDiag *diag = new NetDiag(this);
+    connect(diag, &NetDiag::lineReady, this, [this](const QString &line) {
+        statusLabel->setText(line.trimmed().left(80));
+    });
+    connect(diag, &NetDiag::finished, this, [this, diag](int code) {
+        Q_UNUSED(code);
+        diag->deleteLater();
+    });
+
+    diag->traceroute(ip);
+}
+
+// ==================== Vulnerability Scan ====================
+
+void MainWindow::scanVulnerabilities() {
+    statusLabel->setText(tr("正在扫描漏洞..."));
+
+    // Collect all devices and their ports
+    QList<NetworkDevice> allDevices;
+    QHash<QString, QList<int>> portMap;
+
+    for (int i = 0; i < lanList->count(); i++) {
+        QWidget *w = lanList->itemWidget(lanList->item(i));
+        if (!w) continue;
+        NetworkDevice dev;
+        dev.type = Lan;
+        dev.ip = w->findChild<QLabel*>("cardSsid")->text();
+        dev.mac = w->findChild<QLabel*>("cardMac")->text();
+        allDevices.append(dev);
+    }
+
+    QtConcurrent::run([this, allDevices, portMap]() {
+        VulnScanner &scanner = VulnScanner::instance();
+        QList<VulnFinding> findings;
+
+        // For each device, scan ports and check vulnerabilities
+        for (const NetworkDevice &dev : allDevices) {
+            QList<int> openPorts;
+            QTcpSocket socket;
+            QList<int> commonPorts = {22, 23, 21, 80, 443, 445, 554, 3389, 5900, 9100};
+
+            for (int port : commonPorts) {
+                socket.connectToHost(dev.ip, port);
+                if (socket.waitForConnected(200)) {
+                    openPorts.append(port);
+                    socket.disconnectFromHost();
+                }
+            }
+
+            QList<VulnFinding> devFindings = scanner.scanDevice(dev.ip, dev.mac, openPorts);
+            findings.append(devFindings);
+        }
+
+        QTimer::singleShot(0, this, [this, findings]() {
+            if (findings.isEmpty()) {
+                statusLabel->setText(tr("未发现安全风险"));
+            } else {
+                int critical = 0, high = 0, medium = 0;
+                for (const VulnFinding &f : findings) {
+                    if (f.rule.severity == "Critical") critical++;
+                    else if (f.rule.severity == "High") high++;
+                    else if (f.rule.severity == "Medium") medium++;
+                }
+                statusLabel->setText(tr("发现 %1 个风险: 严重%2 高%3 中%4")
+                    .arg(findings.size()).arg(critical).arg(high).arg(medium));
             }
         });
     });

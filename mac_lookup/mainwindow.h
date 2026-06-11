@@ -15,6 +15,13 @@
 #include <QMouseEvent>
 #include "scanner.h"
 #include "oui_database.h"
+#include "fingerprint.h"
+#include "wol.h"
+#include "netdiag.h"
+#include "importer.h"
+#include "speedtest.h"
+#include "bandwidth.h"
+#include "vulnscan.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -38,6 +45,14 @@ private slots:
     void toggleDarkMode();
     void viewDeviceHistory(const QString &key);
     void updateAllCardStyles();
+
+    // New feature slots
+    void importResults();
+    void runSpeedTest();
+    void wakeDevice(const QString &mac, const QString &ip);
+    void pingDevice(const QString &ip);
+    void tracerouteDevice(const QString &ip);
+    void scanVulnerabilities();
 
 private:
     void setupUI();
