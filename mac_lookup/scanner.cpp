@@ -511,7 +511,7 @@ QList<NetworkDevice> wifiScan() {
 
             inCell = true;
             currentDevice = NetworkDevice();
-            currentDevice.type = "WiFi";
+            currentDevice.type = WiFi;
             currentDevice.latency = 0;
             currentDevice.signal = 0;
 
@@ -572,7 +572,7 @@ QList<NetworkDevice> wifiScan() {
             testProc.exitCode() != 0) {
             result.clear();
             NetworkDevice warnAp;
-            warnAp.type = "WiFi";
+            warnAp.type = WiFi;
             warnAp.ip = QObject::tr("(扫描需要root权限，请使用sudo运行)");
             warnAp.mac = "";
             warnAp.latency = 0;
