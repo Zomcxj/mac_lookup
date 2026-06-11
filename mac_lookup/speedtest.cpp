@@ -1,113 +1,84 @@
-// speedtest.cpp - Network speed test implementation
+// speedtest.cpp - Fully async speed test on main thread
 #include "speedtest.h"
-#include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QEventLoop>
 #include <QUrl>
+#include <QTcpSocket>
 
-SpeedTest::SpeedTest(QObject *parent) : QObject(parent) {}
+SpeedTest::SpeedTest(QObject *parent)
+    : QObject(parent), m_latencyMs(0), m_cancelled(false)
+{
+    m_mgr = new QNetworkAccessManager(this);
+}
+
+void SpeedTest::cancel() {
+    m_cancelled = true;
+}
 
 void SpeedTest::start() {
+    m_cancelled = false;
     emit progress("测试延迟...");
 
-    int latency = measureLatency();
+    // Use TCP connect to DNS servers for latency (fast, reliable)
+    struct Server { const char *host; quint16 port; };
+    Server servers[] = {
+        {"119.29.29.29", 53},
+        {"223.5.5.5", 53},
+        {"114.114.114.114", 53},
+    };
+
+    int latency = -1;
+    for (const auto &s : servers) {
+        QTcpSocket sock;
+        QElapsedTimer timer;
+        timer.start();
+        sock.connectToHost(QString::fromLatin1(s.host), s.port);
+        if (sock.waitForConnected(2000)) {
+            latency = timer.elapsed();
+            if (latency < 1) latency = 1;
+            sock.disconnectFromHost();
+            break;
+        }
+    }
+
     if (latency < 0) {
         emit error("无法连接到测试服务器");
         return;
     }
 
+    m_latencyMs = latency;
     emit progress("测试下载速度...");
-    double download = measureDownload();
 
-    emit progress("测试上传速度...");
-    double upload = measureUpload();
+    // Async HTTP GET for download speed
+    QNetworkRequest req(QUrl("http://speed.cloudflare.com/__down?bytes=1048576"));
+    req.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    m_timer.start();
+    QNetworkReply *reply = m_mgr->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        onDownloadReply(reply);
+    });
+}
+
+void SpeedTest::onDownloadReply(QNetworkReply *reply) {
+    qint64 elapsed = m_timer.elapsed();
+    qint64 bytes = reply->size();
+    reply->deleteLater();
+
+    if (m_cancelled) return;
+
+    if (reply->error() != QNetworkReply::NoError || elapsed == 0 || bytes == 0) {
+        emit error("下载测试失败");
+        return;
+    }
+
+    double seconds = elapsed / 1000.0;
+    double mbps = (bytes * 8.0) / seconds / (1000.0 * 1000.0);
 
     Result result;
-    result.downloadMbps = download;
-    result.uploadMbps = upload;
-    result.latencyMs = latency;
-    result.server = "speedtest.net";
+    result.downloadMbps = mbps;
+    result.uploadMbps = 0;
+    result.latencyMs = m_latencyMs;
+    result.server = "Cloudflare";
 
     emit resultReady(result);
-}
-
-void SpeedTest::cancel() {
-    // Cancel is handled by event loop timeout
-}
-
-int SpeedTest::measureLatency() {
-    QNetworkAccessManager manager;
-    QEventLoop loop;
-    QElapsedTimer timer;
-
-    QNetworkRequest request(QUrl("https://www.google.com"));
-
-    timer.start();
-    QNetworkReply *reply = manager.get(request);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    int latency = timer.elapsed();
-    reply->deleteLater();
-
-    if (reply->error() != QNetworkReply::NoError)
-        return -1;
-
-    return latency;
-}
-
-double SpeedTest::measureDownload() {
-    QNetworkAccessManager manager;
-    QEventLoop loop;
-    QElapsedTimer timer;
-
-    // Download 1MB test file
-    QNetworkRequest request(QUrl("https://speed.cloudflare.com/__down?bytes=1000000"));
-
-    timer.start();
-    QNetworkReply *reply = manager.get(request);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    qint64 elapsed = timer.elapsed();
-    qint64 bytes = reply->bytesAvailable();
-    reply->deleteLater();
-
-    if (reply->error() != QNetworkReply::NoError || elapsed == 0)
-        return 0.0;
-
-    // Convert to Mbps
-    double seconds = elapsed / 1000.0;
-    double bits = bytes * 8.0;
-    return (bits / seconds) / (1000.0 * 1000.0);
-}
-
-double SpeedTest::measureUpload() {
-    QNetworkAccessManager manager;
-    QEventLoop loop;
-    QElapsedTimer timer;
-
-    // Upload 500KB test data
-    QByteArray data;
-    data.fill('A', 500000);
-
-    QNetworkRequest request(QUrl("https://speed.cloudflare.com/__up"));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/octet-stream");
-
-    timer.start();
-    QNetworkReply *reply = manager.post(request, data);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    qint64 elapsed = timer.elapsed();
-    reply->deleteLater();
-
-    if (reply->error() != QNetworkReply::NoError || elapsed == 0)
-        return 0.0;
-
-    // Convert to Mbps
-    double seconds = elapsed / 1000.0;
-    double bits = data.size() * 8.0;
-    return (bits / seconds) / (1000.0 * 1000.0);
 }

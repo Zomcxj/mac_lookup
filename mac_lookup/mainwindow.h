@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QtConcurrent>
+#include <QThread>
 #include <QMouseEvent>
 #include "scanner.h"
 #include "oui_database.h"

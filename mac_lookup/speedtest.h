@@ -3,7 +3,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QNetworkAccessManager>
 #include <QElapsedTimer>
+
+class QNetworkReply;
 
 class SpeedTest : public QObject {
     Q_OBJECT
@@ -17,11 +20,7 @@ public:
     };
 
     explicit SpeedTest(QObject *parent = nullptr);
-
-    // Start speed test
     void start();
-
-    // Cancel test
     void cancel();
 
 signals:
@@ -29,10 +28,14 @@ signals:
     void resultReady(const SpeedTest::Result &result);
     void error(const QString &message);
 
+private slots:
+    void onDownloadReply(QNetworkReply *reply);
+
 private:
-    int measureLatency();
-    double measureDownload();
-    double measureUpload();
+    QNetworkAccessManager *m_mgr;
+    QElapsedTimer m_timer;
+    int m_latencyMs;
+    bool m_cancelled;
 };
 
 #endif // SPEEDTEST_H
