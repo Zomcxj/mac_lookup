@@ -360,12 +360,6 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     for (const NetworkDevice &dev : enrichedDevices) {
         QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
 
-        if (scanController->discoveredDevices().contains(key)) {
-            if (dev.type == Lan) lanCount++;
-            else wifiCount++;
-            continue;
-        }
-
         if (dev.type == Lan) lanCount++;
         else wifiCount++;
 
