@@ -354,14 +354,8 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     removeFromList(lanList);
     removeFromList(wifiList);
 
-    int lanCount = 0;
-    int wifiCount = 0;
-
     for (const NetworkDevice &dev : enrichedDevices) {
         QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
-
-        if (dev.type == Lan) lanCount++;
-        else wifiCount++;
 
         QWidget *card = DeviceCardFactory::createCard(dev, darkMode);
         QListWidgetItem *item = new QListWidgetItem();
@@ -373,12 +367,16 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
         targetList->setItemWidget(item, card);
     }
 
+    int lanCount = lanList->count();
+    int wifiCount = wifiList->count();
+    int total = lanCount + wifiCount;
+
     if (scanController->isScanning())
         statusLabel->setText(tr("实时扫描中 | 局域网: %1 | WiFi: %2 | 总计: %3")
-                            .arg(lanCount).arg(wifiCount).arg(scanController->discoveredDevices().size()));
+                            .arg(lanCount).arg(wifiCount).arg(total));
     else
         statusLabel->setText(tr("局域网: %1 | WiFi: %2 | 总计: %3")
-                            .arg(lanCount).arg(wifiCount).arg(scanController->discoveredDevices().size()));
+                            .arg(lanCount).arg(wifiCount).arg(total));
 }
 
 // Look up manufacturer by OUI prefix (first 3 bytes of MAC, e.g. "AA:BB:CC")
