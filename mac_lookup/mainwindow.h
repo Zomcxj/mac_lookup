@@ -24,6 +24,7 @@
 #include "bandwidth.h"
 #include "vulnscan.h"
 #include "scan_controller.h"
+#include "device_card_factory.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -45,7 +46,6 @@ private slots:
     void scanPorts(const QString &ip);
     void toggleDarkMode();
     void viewDeviceHistory(const QString &key);
-    void updateAllCardStyles();
 
     // New feature slots
     void importResults();
@@ -60,7 +60,6 @@ private:
     void applyStyles();
     void onListContextMenu(const QPoint &pos);
     void copySelected();
-    QWidget* createDeviceCard(const NetworkDevice &device);
     void copyDeviceMac();
     void lookupManufacturer(NetworkDevice &dev) const;
 

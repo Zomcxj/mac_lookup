@@ -22,7 +22,8 @@ SOURCES += \
     speedtest.cpp \
     bandwidth.cpp \
     vulnscan.cpp \
-    scan_controller.cpp
+    scan_controller.cpp \
+    device_card_factory.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -37,7 +38,8 @@ HEADERS += \
     bandwidth.h \
     vulnscan.h \
     utils.h \
-    scan_controller.h
+    scan_controller.h \
+    device_card_factory.h
 
 win32:RC_FILE = app_icon.rc
 win32:LIBS += -liphlpapi -lws2_32 -lwlanapi -lole32
