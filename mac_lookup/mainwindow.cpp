@@ -336,23 +336,9 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     for (auto &dev : enrichedDevices)
         lookupManufacturer(dev);
 
-    // Build set of new device keys
-    QSet<QString> newKeys;
-    for (const NetworkDevice &dev : enrichedDevices) {
-        newKeys.insert(dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac));
-    }
-
-    // Remove devices that are no longer present
-    auto removeFromList = [&](QListWidget *list) {
-        for (int i = list->count() - 1; i >= 0; i--) {
-            QListWidgetItem *item = list->item(i);
-            if (!newKeys.contains(item->data(Qt::UserRole).toString())) {
-                delete list->takeItem(i);
-            }
-        }
-    };
-    removeFromList(lanList);
-    removeFromList(wifiList);
+    // Clear and rebuild lists
+    lanList->clear();
+    wifiList->clear();
 
     for (const NetworkDevice &dev : enrichedDevices) {
         QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
