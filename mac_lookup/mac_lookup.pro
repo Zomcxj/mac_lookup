@@ -34,7 +34,8 @@ HEADERS += \
     importer.h \
     speedtest.h \
     bandwidth.h \
-    vulnscan.h
+    vulnscan.h \
+    utils.h
 
 win32:RC_FILE = app_icon.rc
 win32:LIBS += -liphlpapi -lws2_32 -lwlanapi -lole32

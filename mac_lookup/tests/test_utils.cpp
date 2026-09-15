@@ -2,25 +2,13 @@
 #include "../scanner.h"
 #include "../oui_database.h"
 #include "../thememanager.h"
+#include "../utils.h"
 #include <QFile>
 #include <QTextStream>
 #include <QRegularExpression>
 #include <QHash>
 #include <QApplication>
 #include <QTemporaryFile>
-
-// Helper: format 6 bytes to MAC string (Windows-only, duplicated for test)
-static QString formatMacAddress(const unsigned char *bytes, int len) {
-    if (len < 6) return QString();
-    return QString("%1:%2:%3:%4:%5:%6")
-        .arg(bytes[0], 2, 16, QChar('0'))
-        .arg(bytes[1], 2, 16, QChar('0'))
-        .arg(bytes[2], 2, 16, QChar('0'))
-        .arg(bytes[3], 2, 16, QChar('0'))
-        .arg(bytes[4], 2, 16, QChar('0'))
-        .arg(bytes[5], 2, 16, QChar('0'))
-        .toUpper();
-}
 
 // ==================== Original Tests ====================
 

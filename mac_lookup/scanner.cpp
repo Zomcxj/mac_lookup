@@ -1,5 +1,6 @@
 // scanner.cpp - Platform-specific network scanning (ARP + WiFi)
 #include "scanner.h"
+#include "utils.h"
 #include <QNetworkInterface>
 #include <QProcess>
 #include <QRegularExpression>
@@ -60,19 +61,6 @@ QList<NetworkDevice> deduplicateBySsid(const QList<NetworkDevice> &devices) {
 #pragma comment(lib, "wlanapi.lib")
 #pragma comment(lib, "ole32.lib")
 #endif
-
-// Format 6 raw bytes into "XX:XX:XX:XX:XX:XX" uppercase hex string
-static QString formatMacAddress(const BYTE *bytes, int len) {
-    if (len < 6) return QString();
-    return QString("%1:%2:%3:%4:%5:%6")
-        .arg(bytes[0], 2, 16, QChar('0'))
-        .arg(bytes[1], 2, 16, QChar('0'))
-        .arg(bytes[2], 2, 16, QChar('0'))
-        .arg(bytes[3], 2, 16, QChar('0'))
-        .arg(bytes[4], 2, 16, QChar('0'))
-        .arg(bytes[5], 2, 16, QChar('0'))
-        .toUpper();
-}
 
 // Get adapter MAC address (Windows: prefer wireless, fallback to first non-loopback)
 QString getAdapterMac() {
