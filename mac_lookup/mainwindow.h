@@ -23,6 +23,7 @@
 #include "speedtest.h"
 #include "bandwidth.h"
 #include "vulnscan.h"
+#include "scan_controller.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -38,7 +39,6 @@ protected:
 
 private slots:
     void startScan();
-    void doScan();
     void onScanFinished(const QList<NetworkDevice> &devices);
     void filterDevices(const QString &text);
     void exportResults();
@@ -72,14 +72,8 @@ private:
     QListWidget *wifiList;
     QFrame *scanCard;
     OuiDatabase ouiDb;
-    QTimer *scanTimer;
-    QTimer *animTimer;
-    int animFrame;
-    bool isScanning;
-    bool scanInProgress;
+    ScanController *scanController;
     QLabel *deviceMacLabel;
-    QSet<QString> discoveredDevices;
-    QHash<QString, QStringList> deviceHistory;
     QString m_deviceMac;
     bool darkMode;
     bool dragging;

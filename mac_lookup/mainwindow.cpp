@@ -23,22 +23,15 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    isScanning = false;
-    scanInProgress = false;
     darkMode = false;
     dragging = false;
-    animFrame = 0;
-    scanTimer = new QTimer(this);
-    scanTimer->setSingleShot(false);
-    connect(scanTimer, &QTimer::timeout, this, &MainWindow::doScan);
 
-    animTimer = new QTimer(this);
-    animTimer->setSingleShot(false);
-    connect(animTimer, &QTimer::timeout, [this]() {
-        QStringList frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-        animFrame = (animFrame + 1) % frames.size();
-        scanButton->setText(frames[animFrame] + " " + tr("扫描中"));
+    scanController = new ScanController(this);
+    connect(scanController, &ScanController::scanFinished, this, &MainWindow::onScanFinished);
+    connect(scanController, &ScanController::animationFrame, this, [this](const QString &frame) {
+        scanButton->setText(frame);
     });
+
     setupUI();
     applyStyles();
 
@@ -296,11 +289,6 @@ void MainWindow::setupUI() {
 
     connect(scanButton, &QPushButton::clicked, this, &MainWindow::startScan);
     connect(filterInput, &QLineEdit::textChanged, this, &MainWindow::filterDevices);
-    connect(intervalSpin, QOverload<int>::of(&QSpinBox::valueChanged), [this](int val) {
-        if (isScanning) {
-            scanTimer->setInterval(val * 1000);
-        }
-    });
     connect(exportButton, &QPushButton::clicked, this, &MainWindow::exportResults);
     connect(darkModeButton, &QPushButton::clicked, this, &MainWindow::toggleDarkMode);
     connect(importButton, &QPushButton::clicked, this, &MainWindow::importResults);
@@ -330,64 +318,36 @@ void MainWindow::toggleDarkMode() {
 // ==================== Scan Control ====================
 
 void MainWindow::startScan() {
-    if (!isScanning) {
-        isScanning = true;
-        discoveredDevices.clear();
+    if (!scanController->isScanning()) {
         lanList->clear();
         wifiList->clear();
         scanButton->setStyleSheet("#scanButton { background-color: #ea4335; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; }");
-        animFrame = 0;
-        animTimer->start(100);
-        scanTimer->start(intervalSpin->value() * 1000);
-        doScan();
+        scanController->start(intervalSpin->value());
     } else {
-        isScanning = false;
-        scanTimer->stop();
-        animTimer->stop();
+        scanController->stop();
         scanButton->setText(tr("🔍 开始扫描"));
         scanButton->setStyleSheet("");
-        statusLabel->setText(tr("已停止扫描 | 共发现 %1 个设备").arg(discoveredDevices.size()));
     }
-}
-
-void MainWindow::doScan() {
-    if (scanInProgress) return;
-    scanInProgress = true;
-
-    QtConcurrent::run([this]() {
-        QList<NetworkDevice> lanDevices = arpScan();
-        QList<NetworkDevice> wifiDevices = wifiScan();
-
-        QList<NetworkDevice> allDevices;
-        allDevices.append(lanDevices);
-        allDevices.append(wifiDevices);
-
-        for (auto &dev : allDevices)
-            lookupManufacturer(dev);
-
-        QTimer::singleShot(0, this, [this, allDevices]() {
-            scanInProgress = false;
-            onScanFinished(allDevices);
-        });
-    });
 }
 
 void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
-    // Incremental update: compare with displayed devices, only add/remove changes
-    // Key format: "type:identifier" (e.g. "LAN:AA:BB:CC:DD:EE:FF" or "WiFi:MyNetwork")
+    // Look up manufacturers for all devices
+    QList<NetworkDevice> enrichedDevices = devices;
+    for (auto &dev : enrichedDevices)
+        lookupManufacturer(dev);
+
+    // Build set of new device keys
     QSet<QString> newKeys;
-    for (const NetworkDevice &dev : devices) {
+    for (const NetworkDevice &dev : enrichedDevices) {
         newKeys.insert(dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac));
     }
 
+    // Remove devices that are no longer present
     auto removeFromList = [&](QListWidget *list) {
         for (int i = list->count() - 1; i >= 0; i--) {
             QListWidgetItem *item = list->item(i);
             if (!newKeys.contains(item->data(Qt::UserRole).toString())) {
-                QString key = item->data(Qt::UserRole).toString();
-                deviceHistory[key].append(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") + " offline");
                 delete list->takeItem(i);
-                discoveredDevices.remove(key);
             }
         }
     };
@@ -397,21 +357,17 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     int lanCount = 0;
     int wifiCount = 0;
 
-    for (const NetworkDevice &dev : devices) {
+    for (const NetworkDevice &dev : enrichedDevices) {
         QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
-        newKeys.insert(key);
 
-        if (discoveredDevices.contains(key)) {
+        if (scanController->discoveredDevices().contains(key)) {
             if (dev.type == Lan) lanCount++;
             else wifiCount++;
             continue;
         }
-        discoveredDevices.insert(key);
 
         if (dev.type == Lan) lanCount++;
         else wifiCount++;
-
-        deviceHistory[key].append(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") + " online");
 
         QWidget *card = createDeviceCard(dev);
         QListWidgetItem *item = new QListWidgetItem();
@@ -423,12 +379,12 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
         targetList->setItemWidget(item, card);
     }
 
-    if (isScanning)
+    if (scanController->isScanning())
         statusLabel->setText(tr("实时扫描中 | 局域网: %1 | WiFi: %2 | 总计: %3")
-                            .arg(lanCount).arg(wifiCount).arg(discoveredDevices.size()));
+                            .arg(lanCount).arg(wifiCount).arg(scanController->discoveredDevices().size()));
     else
         statusLabel->setText(tr("局域网: %1 | WiFi: %2 | 总计: %3")
-                            .arg(lanCount).arg(wifiCount).arg(discoveredDevices.size()));
+                            .arg(lanCount).arg(wifiCount).arg(scanController->discoveredDevices().size()));
 }
 
 // ==================== Device Card ====================
@@ -709,12 +665,13 @@ void MainWindow::filterDevices(const QString &text) {
 // ==================== Topology & History ====================
 
 void MainWindow::viewDeviceHistory(const QString &key) {
-    if (!deviceHistory.contains(key) || deviceHistory[key].isEmpty()) {
+    const auto &history = scanController->deviceHistory();
+    if (!history.contains(key) || history[key].isEmpty()) {
         statusLabel->setText(tr("暂无历史记录"));
         return;
     }
 
-    QStringList entries = deviceHistory[key];
+    QStringList entries = history[key];
     QString historyText = tr("设备 %1 在线历史：\n\n").arg(key);
     for (const QString &entry : entries) {
         historyText += entry + "\n";
@@ -797,7 +754,6 @@ void MainWindow::importResults() {
     // Clear and rebuild lists
     lanList->clear();
     wifiList->clear();
-    discoveredDevices.clear();
 
     for (const NetworkDevice &dev : merged) {
         QWidget *card = createDeviceCard(dev);
@@ -805,7 +761,6 @@ void MainWindow::importResults() {
         QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
         item->setData(Qt::UserRole, key);
         item->setSizeHint(card->sizeHint());
-        discoveredDevices.insert(key);
 
         QListWidget *targetList = (dev.type == Lan) ? lanList : wifiList;
         targetList->addItem(item);
