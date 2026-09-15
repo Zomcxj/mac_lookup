@@ -13,13 +13,16 @@ SOURCES += \
     test_utils.cpp \
     ../scanner.cpp \
     ../oui_database.cpp \
-    ../thememanager.cpp
+    ../thememanager.cpp \
+    ../importer.cpp
 
 HEADERS += \
     test_utils.h \
     ../scanner.h \
     ../oui_database.h \
-    ../thememanager.h
+    ../thememanager.h \
+    ../importer.h \
+    ../utils.h
 
 DEFINES += QT_DEPRECATED_WARNINGS
 win32:LIBS += -liphlpapi -lws2_32 -lwlanapi -lole32

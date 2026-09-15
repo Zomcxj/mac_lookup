@@ -3,6 +3,7 @@
 #include "../oui_database.h"
 #include "../thememanager.h"
 #include "../utils.h"
+#include "../importer.h"
 #include <QFile>
 #include <QTextStream>
 #include <QRegularExpression>
@@ -235,4 +236,185 @@ void TestUtils::testThemeManagerCardStyle() {
     // Dark WiFi
     QString darkWifi = ThemeManager::cardStyle(false, true);
     QVERIFY(darkWifi.contains("#1a3a1a"));
+}
+
+// ==================== Edge Case Tests ====================
+
+void TestUtils::testFormatMacAddressEdgeCases() {
+    // Empty input (0 bytes)
+    unsigned char empty[1] = {0x00};
+    QCOMPARE(formatMacAddress(empty, 0), QString());
+
+    // Exactly 6 bytes with zeros
+    unsigned char zeros[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    QCOMPARE(formatMacAddress(zeros, 6), QString("00:00:00:00:00:00"));
+
+    // Single byte
+    unsigned char single[1] = {0xAB};
+    QCOMPARE(formatMacAddress(single, 1), QString());
+
+    // 5 bytes (too short)
+    unsigned char five[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+    QCOMPARE(formatMacAddress(five, 5), QString());
+}
+
+void TestUtils::testFormatIpAddressEdgeCases() {
+    // Loopback 127.0.0.1 = 0x7F000001
+    QCOMPARE(formatIpAddress(0x7F000001), QString("127.0.0.1"));
+
+    // Link-local 169.254.1.1 = 0xA9FE0101
+    QCOMPARE(formatIpAddress(0xA9FE0101), QString("169.254.1.1"));
+
+    // Broadcast 255.255.255.255 = 0xFFFFFFFF
+    QCOMPARE(formatIpAddress(0xFFFFFFFF), QString("255.255.255.255"));
+
+    // Single byte values
+    QCOMPARE(formatIpAddress(0x01000000), QString("1.0.0.0"));
+    QCOMPARE(formatIpAddress(0x00010000), QString("0.1.0.0"));
+}
+
+void TestUtils::testSortByLatencyEdgeCases() {
+    // Empty list
+    QList<NetworkDevice> empty;
+    sortByLatency(empty);
+    QCOMPARE(empty.size(), 0);
+
+    // All offline
+    QList<NetworkDevice> allOffline;
+    NetworkDevice o1; o1.latency = -1; o1.type = Lan;
+    NetworkDevice o2; o2.latency = -1; o2.type = Lan;
+    allOffline << o1 << o2;
+    sortByLatency(allOffline);
+    QCOMPARE(allOffline[0].latency, -1);
+    QCOMPARE(allOffline[1].latency, -1);
+
+    // All same latency
+    QList<NetworkDevice> allSame;
+    NetworkDevice s1; s1.latency = 100; s1.type = Lan;
+    NetworkDevice s2; s2.latency = 100; s2.type = Lan;
+    NetworkDevice s3; s3.latency = 100; s3.type = Lan;
+    allSame << s1 << s2 << s3;
+    sortByLatency(allSame);
+    QCOMPARE(allSame[0].latency, 100);
+    QCOMPARE(allSame[1].latency, 100);
+    QCOMPARE(allSame[2].latency, 100);
+
+    // Mixed: offline should be last
+    QList<NetworkDevice> mixed;
+    NetworkDevice m1; m1.latency = -1; m1.type = Lan;
+    NetworkDevice m2; m2.latency = 50; m2.type = Lan;
+    mixed << m1 << m2;
+    sortByLatency(mixed);
+    QCOMPARE(mixed[0].latency, 50);
+    QCOMPARE(mixed[1].latency, -1);
+}
+
+void TestUtils::testDeduplicateBySsidEdgeCases() {
+    // Empty list
+    QList<NetworkDevice> empty;
+    QList<NetworkDevice> emptyResult = deduplicateBySsid(empty);
+    QCOMPARE(emptyResult.size(), 0);
+
+    // All unique
+    QList<NetworkDevice> unique;
+    NetworkDevice u1; u1.ip = "Net1"; u1.mac = "AA:AA:AA:AA:AA:01";
+    NetworkDevice u2; u2.ip = "Net2"; u2.mac = "AA:AA:AA:AA:AA:02";
+    unique << u1 << u2;
+    QList<NetworkDevice> uniqueResult = deduplicateBySsid(unique);
+    QCOMPARE(uniqueResult.size(), 2);
+
+    // All duplicates (same SSID)
+    QList<NetworkDevice> dupes;
+    NetworkDevice d1; d1.ip = "SameNet"; d1.mac = "AA:AA:AA:AA:AA:01";
+    NetworkDevice d2; d2.ip = "SameNet"; d2.mac = "AA:AA:AA:AA:AA:02";
+    dupes << d1 << d2;
+    QList<NetworkDevice> dupeResult = deduplicateBySsid(dupes);
+    QCOMPARE(dupeResult.size(), 1);
+}
+
+void TestUtils::testOuiDatabaseLookupCaseInsensitive() {
+    OuiDatabase db;
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    tempFile.write("AA:BB:CC\tCN\tTest Company\t测试公司\n");
+    tempFile.close();
+
+    db.load(tempFile.fileName(), false);
+
+    // Lowercase MAC should still match
+    QString result = db.lookup("aa:bb:cc:dd:ee:ff");
+    QCOMPARE(result, QString("Test Company"));
+
+    // Mixed case should still match
+    QString result2 = db.lookup("Aa:Bb:Cc:11:22:33");
+    QCOMPARE(result2, QString("Test Company"));
+}
+
+// ==================== ScanImporter Tests ====================
+
+void TestUtils::testMergeDevicesNewOnly() {
+    QList<NetworkDevice> existing;
+    QList<NetworkDevice> imported;
+    NetworkDevice d1; d1.type = Lan; d1.ip = "192.168.1.1"; d1.mac = "AA:BB:CC:DD:EE:01";
+    imported << d1;
+
+    QList<NetworkDevice> merged = ScanImporter::mergeDevices(existing, imported);
+    QCOMPARE(merged.size(), 1);
+    QCOMPARE(merged[0].mac, QString("AA:BB:CC:DD:EE:01"));
+}
+
+void TestUtils::testMergeDevicesUpdateExisting() {
+    QList<NetworkDevice> existing;
+    NetworkDevice e1; e1.type = Lan; e1.ip = "192.168.1.1"; e1.mac = "AA:BB:CC:DD:EE:01";
+    e1.manufacturer = "Old Vendor";
+    existing << e1;
+
+    QList<NetworkDevice> imported;
+    NetworkDevice d1; d1.type = Lan; d1.ip = "192.168.1.1"; d1.mac = "AA:BB:CC:DD:EE:01";
+    d1.manufacturer = "New Vendor";
+    imported << d1;
+
+    QList<NetworkDevice> merged = ScanImporter::mergeDevices(existing, imported);
+    QCOMPARE(merged.size(), 1);
+    QCOMPARE(merged[0].manufacturer, QString("New Vendor"));
+}
+
+void TestUtils::testMergeDevicesOverlapping() {
+    QList<NetworkDevice> existing;
+    NetworkDevice e1; e1.type = Lan; e1.ip = "192.168.1.1"; e1.mac = "AA:BB:CC:DD:EE:01";
+    existing << e1;
+
+    QList<NetworkDevice> imported;
+    NetworkDevice d1; d1.type = Lan; d1.ip = "192.168.1.2"; d1.mac = "AA:BB:CC:DD:EE:02";
+    NetworkDevice d2; d2.type = WiFi; d2.ip = "MyNetwork"; d2.mac = "AA:BB:CC:DD:EE:03";
+    imported << d1 << d2;
+
+    QList<NetworkDevice> merged = ScanImporter::mergeDevices(existing, imported);
+    QCOMPARE(merged.size(), 3);
+}
+
+void TestUtils::testImportCsvWithHeader() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    tempFile.write("Type,IP/SSID,MAC,Latency/Signal,Manufacturer\n");
+    tempFile.write("LAN,192.168.1.1,AA:BB:CC:DD:EE:01,50 ms,Test Vendor\n");
+    tempFile.write("WiFi,MyNetwork,AA:BB:CC:DD:EE:02,-45 dBm,Another Vendor\n");
+    tempFile.close();
+
+    QList<NetworkDevice> devices = ScanImporter::importCsv(tempFile.fileName());
+    QCOMPARE(devices.size(), 2);
+    QCOMPARE(devices[0].type, Lan);
+    QCOMPARE(devices[0].ip, QString("192.168.1.1"));
+    QCOMPARE(devices[0].latency, 50);
+    QCOMPARE(devices[1].type, WiFi);
+    QCOMPARE(devices[1].signal, -45);
+}
+
+void TestUtils::testImportCsvEmptyFile() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    tempFile.close();
+
+    QList<NetworkDevice> devices = ScanImporter::importCsv(tempFile.fileName());
+    QCOMPARE(devices.size(), 0);
 }
