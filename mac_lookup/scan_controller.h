@@ -6,6 +6,8 @@
 #include <QSet>
 #include <QHash>
 #include <QList>
+#include <QFuture>
+#include <atomic>
 #include "scanner.h"
 
 class ScanController : public QObject {
@@ -13,6 +15,7 @@ class ScanController : public QObject {
 
 public:
     explicit ScanController(QObject *parent = nullptr);
+    ~ScanController() override;
 
     void start(int intervalSec);
     void stop();
@@ -36,6 +39,9 @@ private:
     int m_animFrame;
     bool m_isScanning;
     bool m_scanInProgress;
+    QFuture<void> m_future;
+    std::atomic<bool> m_stop{false};
+    std::atomic<bool> m_cancelScan{false};
     QSet<QString> m_discoveredDevices;
     QHash<QString, QStringList> m_deviceHistory;
 };

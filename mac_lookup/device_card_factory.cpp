@@ -14,24 +14,7 @@ static void styleCard(QFrame *card, QLabel *typeLbl, QLabel *ssidLbl, QLabel *ma
     vendorLbl->setStyleSheet(ThemeManager::vendorStyle(isDark));
 }
 
-QWidget* DeviceCardFactory::createCard(const NetworkDevice &dev, bool isDark) {
-    QFrame *card = new QFrame;
-    card->setObjectName(dev.type == Lan ? "lanCard" : "wifiCard");
-    card->setMinimumHeight(60);
-
-    QVBoxLayout *layout = new QVBoxLayout(card);
-    layout->setContentsMargins(14, 10, 14, 10);
-    layout->setSpacing(4);
-
-    QHBoxLayout *topRow = new QHBoxLayout;
-    topRow->setSpacing(8);
-
-    QLabel *typeLabel = new QLabel(dev.type == Lan ? "LAN" : "WiFi");
-    typeLabel->setObjectName(dev.type == Lan ? "lanTypeLabel" : "wifiTypeLabel");
-
-    QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? QObject::tr("未知") : dev.ip);
-    ipLabel->setObjectName("cardSsid");
-
+static void applyStatus(QLabel *statusLbl, const NetworkDevice &dev) {
     QString statusColor;
     QString statusText;
     if (dev.type == Lan) {
@@ -60,10 +43,31 @@ QWidget* DeviceCardFactory::createCard(const NetworkDevice &dev, bool isDark) {
             statusText = QString::number(dev.signal) + " dBm";
         }
     }
+    statusLbl->setText(statusText);
+    statusLbl->setStyleSheet(ThemeManager::signalStyle(statusColor));
+}
 
-    QLabel *statusLbl = new QLabel(statusText);
+QWidget* DeviceCardFactory::createCard(const NetworkDevice &dev, bool isDark) {
+    QFrame *card = new QFrame;
+    card->setObjectName(dev.type == Lan ? "lanCard" : "wifiCard");
+    card->setMinimumHeight(60);
+
+    QVBoxLayout *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(14, 10, 14, 10);
+    layout->setSpacing(4);
+
+    QHBoxLayout *topRow = new QHBoxLayout;
+    topRow->setSpacing(8);
+
+    QLabel *typeLabel = new QLabel(dev.type == Lan ? "LAN" : "WiFi");
+    typeLabel->setObjectName(dev.type == Lan ? "lanTypeLabel" : "wifiTypeLabel");
+
+    QLabel *ipLabel = new QLabel(dev.ip.isEmpty() ? QObject::tr("未知") : dev.ip);
+    ipLabel->setObjectName("cardSsid");
+
+    QLabel *statusLbl = new QLabel;
     statusLbl->setObjectName("cardSignal");
-    statusLbl->setStyleSheet(QString("font-size:12px;font-weight:bold;color:%1;border:none;").arg(statusColor));
+    applyStatus(statusLbl, dev);
 
     topRow->addWidget(typeLabel);
     topRow->addWidget(ipLabel, 1);
@@ -86,6 +90,19 @@ QWidget* DeviceCardFactory::createCard(const NetworkDevice &dev, bool isDark) {
 
     styleCard(card, typeLabel, ipLabel, macLabel, vendorLabel, isDark, dev.type == Lan);
     return card;
+}
+
+void DeviceCardFactory::updateCard(QWidget *card, const NetworkDevice &dev) {
+    if (!card) return;
+
+    if (QLabel *lbl = card->findChild<QLabel*>("cardSsid"))
+        lbl->setText(dev.ip.isEmpty() ? QObject::tr("未知") : dev.ip);
+    if (QLabel *lbl = card->findChild<QLabel*>("cardMac"))
+        lbl->setText(dev.mac.isEmpty() ? QObject::tr("未知 MAC") : dev.mac);
+    if (QLabel *lbl = card->findChild<QLabel*>("cardVendor"))
+        lbl->setText(dev.manufacturer.isEmpty() ? QObject::tr("未知厂商") : dev.manufacturer);
+    if (QLabel *lbl = card->findChild<QLabel*>("cardSignal"))
+        applyStatus(lbl, dev);
 }
 
 void DeviceCardFactory::updateAllStyles(QListWidget *lanList, QListWidget *wifiList, bool isDark) {

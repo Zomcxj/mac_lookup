@@ -5,22 +5,38 @@
 //   With WiFi flag: ✔\tMAC_PREFIX\tCOUNTRY\tCOMPANY\tCN_NAME (5 fields)
 //
 // Binary cache: QDataStream file with magic number 0x4F554944 ("OUID")
-//   Used to speed up subsequent loads (avoids text parsing)
+//   Header: magic, cache version, source size, source mtime, count, wifi count
+//   Used to speed up subsequent loads; rebuilt when the source changes.
 #include "oui_database.h"
 #include <QFile>
+#include <QFileInfo>
+#include <QDateTime>
+#include <QSaveFile>
 #include <QDataStream>
 #include <QTextStream>
-#include <QRegularExpression>
 #include <QDir>
 
-void OuiDatabase::load(const QString &fileName, bool useCache) {
+void OuiDatabase::load(const QString &fileName, bool useCache, const QString &cacheDir) {
     m_data.clear();
     m_wifiCount = 0;
     m_data.reserve(25000);
 
+    QFileInfo sourceInfo(fileName);
+    const qint64 sourceSize = sourceInfo.exists() ? sourceInfo.size() : -1;
+    const qint64 sourceMtime = sourceInfo.exists()
+        ? sourceInfo.lastModified().toMSecsSinceEpoch() : -1;
+
+    // Cache can live outside the install directory (which may be read-only).
+    QString cacheFile;
+    if (!cacheDir.isEmpty()) {
+        QDir().mkpath(cacheDir);
+        cacheFile = cacheDir + "/" + sourceInfo.fileName() + ".cache";
+    } else {
+        cacheFile = fileName + ".cache";
+    }
+
     // Try binary cache first (faster)
-    QString cacheFile = fileName + ".cache";
-    if (useCache && loadCache(cacheFile))
+    if (useCache && loadCache(cacheFile, sourceSize, sourceMtime))
         return;
 
     // Parse text file
@@ -42,12 +58,14 @@ void OuiDatabase::load(const QString &fileName, bool useCache) {
         // Database format:
         //   With WiFi flag: ✔\tMAC_PREFIX\tCOUNTRY\tCOMPANY\tCN_NAME (5 fields)
         //   Without flag:   MAC_PREFIX\tCOUNTRY\tCOMPANY\tCN_NAME (4 fields)
-        QStringList fields = line.split(QRegularExpression("\\s*\\t\\s*"),
+        QStringList fields = line.split('\t',
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
             Qt::SkipEmptyParts);
 #else
             QString::SkipEmptyParts);
 #endif
+        for (QString &field : fields)
+            field = field.trimmed();
 
         int offset = 0;
         if (fields.size() >= 5) {
@@ -58,17 +76,28 @@ void OuiDatabase::load(const QString &fileName, bool useCache) {
             continue;
         }
 
-        QString mac = fields[0 + offset].remove(QRegularExpression("[^0-9A-Fa-f:]")).toUpper();
-        if (!mac.isEmpty())
+        const QString rawMac = fields[0 + offset];
+        QString mac;
+        mac.reserve(rawMac.size());
+        for (const QChar c : rawMac) {
+            const ushort u = c.unicode();
+            if ((u >= '0' && u <= '9') || (u >= 'a' && u <= 'f') ||
+                (u >= 'A' && u <= 'F') || u == ':') {
+                mac.append(c.toUpper());
+            }
+        }
+
+        if (!mac.isEmpty() && fields.size() > 3 + offset)
             m_data.insert(mac, {fields[1 + offset], fields[3 + offset]});
     }
     file.close();
 
     // Save binary cache for faster subsequent loads
-    saveCache(cacheFile);
+    if (useCache)
+        saveCache(cacheFile, sourceSize, sourceMtime);
 }
 
-bool OuiDatabase::loadCache(const QString &cacheFile) {
+bool OuiDatabase::loadCache(const QString &cacheFile, qint64 sourceSize, qint64 sourceMtime) {
     QFile file(cacheFile);
     if (!file.open(QIODevice::ReadOnly))
         return false;
@@ -76,28 +105,50 @@ bool OuiDatabase::loadCache(const QString &cacheFile) {
     QDataStream in(&file);
     in.setVersion(QDataStream::Qt_5_12);
 
-    quint32 magic;
+    quint32 magic = 0;
+    quint32 version = 0;
+    quint32 count = 0;
+    quint32 wifiCount = 0;
+    qint64 cachedSize = 0;
+    qint64 cachedMtime = 0;
+
     in >> magic;
     if (magic != 0x4F554944)  // "OUID"
         return false;
-
-    quint32 count, wifiCount;
+    in >> version;
+    if (version != 2)
+        return false;
+    in >> cachedSize >> cachedMtime;
+    if (cachedSize != sourceSize || cachedMtime != sourceMtime)
+        return false;
     in >> count >> wifiCount;
+    if (count > 1000000u)
+        return false;
 
+    m_data.clear();
+    m_data.reserve(static_cast<int>(count));
     for (quint32 i = 0; i < count; i++) {
         QString key;
         CompanyInfo info;
         in >> key >> info.country >> info.companyName;
+        if (in.status() != QDataStream::Ok) {
+            m_data.clear();
+            m_wifiCount = 0;
+            return false;
+        }
         m_data.insert(key, info);
     }
-    m_wifiCount = (int)wifiCount;
+    m_wifiCount = static_cast<int>(wifiCount);
 
     file.close();
     return true;
 }
 
-void OuiDatabase::saveCache(const QString &cacheFile) {
-    QFile file(cacheFile);
+void OuiDatabase::saveCache(const QString &cacheFile, qint64 sourceSize, qint64 sourceMtime) {
+    if (sourceSize < 0)
+        return;
+
+    QSaveFile file(cacheFile);
     if (!file.open(QIODevice::WriteOnly))
         return;
 
@@ -105,6 +156,8 @@ void OuiDatabase::saveCache(const QString &cacheFile) {
     out.setVersion(QDataStream::Qt_5_12);
 
     out << (quint32)0x4F554944;  // "OUID" magic
+    out << (quint32)2;           // cache format version
+    out << sourceSize << sourceMtime;
     out << (quint32)m_data.size() << (quint32)m_wifiCount;
 
     auto it = m_data.constBegin();
@@ -113,13 +166,15 @@ void OuiDatabase::saveCache(const QString &cacheFile) {
         ++it;
     }
 
-    file.close();
+    if (out.status() != QDataStream::Ok) {
+        file.cancelWriting();
+        return;
+    }
+    file.commit();
 }
 
 // Look up manufacturer by OUI prefix (first 3 bytes of MAC, e.g. "AA:BB:CC")
 QString OuiDatabase::lookup(const QString &mac) const {
-    QString prefix = mac.left(8).toUpper();
-    if (m_data.contains(prefix))
-        return m_data[prefix].companyName;
-    return QString();
+    const auto it = m_data.constFind(mac.left(8).toUpper());
+    return it != m_data.constEnd() ? it->companyName : QString();
 }

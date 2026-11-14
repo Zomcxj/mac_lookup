@@ -6,6 +6,10 @@
 #include <QRegularExpression>
 #include <QElapsedTimer>
 #include <QTcpSocket>
+#include <QtConcurrent>
+#include <QThreadPool>
+#include <QFutureSynchronizer>
+#include <vector>
 #include <algorithm>
 
 // ==================== Helper Functions ====================
@@ -120,8 +124,9 @@ QList<QString> getSubnetsToScan() {
 // 3. Re-read ARP table to capture newly discovered devices
 // 4. Ping each device individually to measure latency
 // 5. Sort results: online devices first, then by latency (lowest first)
-QList<NetworkDevice> arpScan() {
+QList<NetworkDevice> arpScan(const std::atomic<bool>* cancel) {
     QHash<QString, NetworkDevice> deviceMap;
+    if (cancel && cancel->load()) return {};
 
     // Step 1: Read initial ARP table
     PMIB_IPNETTABLE pIpNetTable = NULL;
@@ -150,6 +155,11 @@ QList<NetworkDevice> arpScan() {
     }
 
     // Step 2: Ping broadcast to discover more devices
+    if (cancel && cancel->load()) {
+        QList<NetworkDevice> partial = deviceMap.values();
+        sortByLatency(partial);
+        return partial;
+    }
     QList<QString> subnets = getSubnetsToScan();
     for (const QString &subnet : subnets) {
         QString broadcast = subnet.left(subnet.lastIndexOf('.')) + ".255";
@@ -190,25 +200,40 @@ QList<NetworkDevice> arpScan() {
         }
     }
 
-    // Step 4: Ping each device for latency
+    // Step 4: Ping devices concurrently (bounded pool, 500ms per host)
     QList<NetworkDevice> allDevices = deviceMap.values();
-    for (NetworkDevice &dev : allDevices) {
-        HANDLE hIcmp = IcmpCreateFile();
-        if (hIcmp != INVALID_HANDLE_VALUE) {
-            ULONG ipAddr = inet_addr(dev.ip.toUtf8().constData());
+    const int deviceCount = allDevices.size();
+    std::vector<int> latencies(deviceCount, -1);
+    QThreadPool pool;
+    pool.setMaxThreadCount(32);
+    QFutureSynchronizer<void> sync;
+
+    for (int i = 0; i < deviceCount; ++i) {
+        sync.addFuture(QtConcurrent::run(&pool, [cancel, &allDevices, &latencies, i]() {
+            if (cancel && cancel->load())
+                return;
+
+            const QString ip = allDevices.at(i).ip;
+            HANDLE hIcmp = IcmpCreateFile();
+            if (hIcmp == INVALID_HANDLE_VALUE)
+                return;
+
+            ULONG ipAddr = inet_addr(ip.toUtf8().constData());
             char sendBuf[32] = {0};
             char replyBuf[sizeof(ICMP_ECHO_REPLY) + 32];
             DWORD pingRet = IcmpSendEcho(hIcmp, ipAddr, sendBuf, sizeof(sendBuf),
                                          NULL, replyBuf, sizeof(replyBuf), 500);
             if (pingRet > 0) {
                 PICMP_ECHO_REPLY pEcho = (PICMP_ECHO_REPLY)replyBuf;
-                dev.latency = (int)pEcho->RoundTripTime;
-            } else {
-                dev.latency = -1;
+                latencies[i] = (int)pEcho->RoundTripTime;
             }
             IcmpCloseHandle(hIcmp);
-        }
+        }));
     }
+    sync.waitForFinished();
+
+    for (int i = 0; i < deviceCount; ++i)
+        allDevices[i].latency = latencies[i];
 
     sortByLatency(allDevices);
     return allDevices;
@@ -220,8 +245,9 @@ QList<NetworkDevice> arpScan() {
 // 3. For each network: extract SSID, BSSID (MAC), signal quality
 // 4. Sort by signal strength (strongest first)
 // 5. Deduplicate by SSID (keep strongest signal for each network)
-QList<NetworkDevice> wifiScan() {
+QList<NetworkDevice> wifiScan(const std::atomic<bool>* cancel) {
     QList<NetworkDevice> result;
+    if (cancel && cancel->load()) return result;
 
     HANDLE hClient = NULL;
     DWORD dwCurVersion = 0;
@@ -235,12 +261,13 @@ QList<NetworkDevice> wifiScan() {
     }
 
     for (DWORD i = 0; i < pIfList->dwNumberOfItems; i++) {
+        if (cancel && cancel->load()) break;
         PWLAN_INTERFACE_INFO pIfInfo = &pIfList->InterfaceInfo[i];
 
         WlanScan(hClient, &pIfInfo->InterfaceGuid, NULL, NULL, NULL);
 
         int attempts = 0;
-        while (attempts < 10) {
+        while (attempts < 10 && !(cancel && cancel->load())) {
             Sleep(500);
             attempts++;
 
@@ -248,6 +275,7 @@ QList<NetworkDevice> wifiScan() {
             if (WlanGetAvailableNetworkList(hClient, &pIfInfo->InterfaceGuid, 0, NULL, &pBssList) == ERROR_SUCCESS && pBssList) {
                 if (pBssList->dwNumberOfItems > 0) {
                     for (DWORD j = 0; j < pBssList->dwNumberOfItems; j++) {
+                        if (cancel && cancel->load()) break;
                         PWLAN_AVAILABLE_NETWORK pBssEntry = &pBssList->Network[j];
 
                         NetworkDevice ap;
@@ -318,11 +346,12 @@ QString getAdapterMac() {
 // 1. Parse /proc/net/arp to get initial ARP table
 // 2. Ping broadcast address to trigger ARP replies
 // 3. Re-read ARP table for newly discovered devices
-// 4. Ping each device in batches of 16 to measure latency
+// 4. Ping each device in batches of 32 to measure latency
 // 5. Sort results: online devices first, then by latency (lowest first)
-QList<NetworkDevice> arpScan() {
+QList<NetworkDevice> arpScan(const std::atomic<bool>* cancel) {
     QList<NetworkDevice> result;
     QHash<QString, NetworkDevice> deviceMap;
+    if (cancel && cancel->load()) return result;
 
     // Step 1: Read initial ARP table from /proc/net/arp
     QFile arpFile("/proc/net/arp");
@@ -333,6 +362,7 @@ QList<NetworkDevice> arpScan() {
     if (!in.atEnd()) in.readLine();  // Skip header
 
     while (!in.atEnd()) {
+        if (cancel && cancel->load()) break;
         QString line = in.readLine().trimmed();
         if (line.isEmpty()) continue;
 
@@ -352,6 +382,12 @@ QList<NetworkDevice> arpScan() {
     }
     arpFile.close();
 
+    if (cancel && cancel->load()) {
+        QList<NetworkDevice> partial = deviceMap.values();
+        sortByLatency(partial);
+        return partial;
+    }
+
     // Step 2: Ping broadcast to discover more devices
     QProcess proc;
     proc.start("ping", QStringList() << "-b" << "-c" << "1" << "-W" << "1"
@@ -364,6 +400,7 @@ QList<NetworkDevice> arpScan() {
     if (!in.atEnd()) in.readLine();
 
     while (!in.atEnd()) {
+        if (cancel && cancel->load()) break;
         QString line = in.readLine().trimmed();
         if (line.isEmpty()) continue;
 
@@ -385,16 +422,19 @@ QList<NetworkDevice> arpScan() {
     }
     arpFile.close();
 
-    // Step 4: Ping each device for latency (batch of 16)
+    // Step 4: Ping each device for latency (batch of 32)
     QList<NetworkDevice> allDevices = deviceMap.values();
-    const int BATCH_SIZE = 16;
+    const int BATCH_SIZE = 32;
 
     for (int batchStart = 0; batchStart < allDevices.size(); batchStart += BATCH_SIZE) {
+        if (cancel && cancel->load()) break;
+
         int batchEnd = qMin(batchStart + BATCH_SIZE, allDevices.size());
         QVector<QProcess*> procs;
         QVector<int> indices;
 
         for (int i = batchStart; i < batchEnd; i++) {
+            if (cancel && cancel->load()) break;
             QProcess *p = new QProcess();
             p->start("ping", QStringList() << "-c" << "1" << "-W" << "1" << allDevices[i].ip);
             procs.append(p);
@@ -402,7 +442,14 @@ QList<NetworkDevice> arpScan() {
         }
 
         for (int j = 0; j < procs.size(); j++) {
-            procs[j]->waitForFinished(2000);
+            if (cancel && cancel->load()) {
+                procs[j]->kill();
+                procs[j]->waitForFinished(200);
+            } else if (!procs[j]->waitForFinished(1500)) {
+                procs[j]->kill();
+                procs[j]->waitForFinished(200);
+            }
+
             if (procs[j]->exitCode() == 0) {
                 QString output = procs[j]->readAllStandardOutput();
                 QRegularExpression timeRx("time[=<]([\\d.]+)");
@@ -429,8 +476,9 @@ QList<NetworkDevice> arpScan() {
 // 5. Convert signal quality to dBm: -100 + (quality * 50 / maxQuality)
 // 6. Sort by signal strength, deduplicate by SSID
 // 7. If no networks found, check if root permissions are needed
-QList<NetworkDevice> wifiScan() {
+QList<NetworkDevice> wifiScan(const std::atomic<bool>* cancel) {
     QList<NetworkDevice> result;
+    if (cancel && cancel->load()) return result;
 
     // Find WiFi interface
     QString wifiIface;
@@ -443,6 +491,8 @@ QList<NetworkDevice> wifiScan() {
 
     if (wifiIface.isEmpty())
         return result;
+
+    if (cancel && cancel->load()) return result;
 
     // Get current connected network info
     QProcess iwgetidProc;
@@ -479,6 +529,7 @@ QList<NetworkDevice> wifiScan() {
     }
 
     // Scan all available networks
+    if (cancel && cancel->load()) return result;
     QProcess proc;
     proc.start("iwlist", QStringList() << wifiIface << "scan");
     proc.waitForFinished(10000);
@@ -490,6 +541,7 @@ QList<NetworkDevice> wifiScan() {
     bool inCell = false;
 
     for (const QString &line : lines) {
+        if (cancel && cancel->load()) break;
         QString trimmed = line.trimmed();
 
         if (trimmed.startsWith("Cell ")) {

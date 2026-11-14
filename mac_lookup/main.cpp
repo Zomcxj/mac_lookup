@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     a.setApplicationName("MAC Lookup");
-    a.setApplicationVersion("1.0");
+    a.setApplicationVersion("1.2.1");
 
     // Register bundled fonts (embedded in exe via Qt resources)
     QFontDatabase::addApplicationFont(":/fonts/JetBrainsMono-Regular.ttf");

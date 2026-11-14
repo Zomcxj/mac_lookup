@@ -3,6 +3,7 @@
 
 #include <QList>
 #include <QString>
+#include <atomic>
 
 // Device type enumeration
 enum DeviceType { Lan, WiFi };
@@ -22,9 +23,10 @@ QString formatIpAddress(unsigned int addr);
 void sortByLatency(QList<NetworkDevice> &devices);
 QList<NetworkDevice> deduplicateBySsid(const QList<NetworkDevice> &devices);
 
-// Platform-specific scanning functions
-QList<NetworkDevice> arpScan();
-QList<NetworkDevice> wifiScan();
+// Platform-specific scanning functions.
+// cancel: optional flag polled between hosts/batches; returns partial results when set.
+QList<NetworkDevice> arpScan(const std::atomic<bool>* cancel = nullptr);
+QList<NetworkDevice> wifiScan(const std::atomic<bool>* cancel = nullptr);
 QString getAdapterMac();
 
 #ifdef Q_OS_WIN

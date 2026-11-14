@@ -1,0 +1,28 @@
+name: Qt CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qtbase5-dev qtbase5-dev-tools qt5-qmake g++
+
+      # Put the test binary at build/release so ../../data resolves to the source data dir.
+      - name: Build tests
+        run: |
+          mkdir -p mac_lookup/build/release
+          cd mac_lookup/build/release
+          qmake ../../tests/tests.pro
+          make -j"$(nproc)"
+
+      - name: Run tests
+        run: ./mac_lookup/build/release/mac_lookup_test

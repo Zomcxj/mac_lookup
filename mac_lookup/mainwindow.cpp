@@ -19,6 +19,24 @@
 #include <QPainter>
 #include <QTimer>
 #include <QTcpSocket>
+#include <QScrollBar>
+#include <QSet>
+#include <QStandardPaths>
+
+namespace {
+
+// Quote CSV fields containing separators/quotes so vendor names stay in one column.
+QString csvEscape(const QString &value) {
+    if (!value.contains(',') && !value.contains('"') &&
+        !value.contains('\n') && !value.contains('\r')) {
+        return value;
+    }
+    QString escaped = value;
+    escaped.replace("\"", "\"\"");
+    return "\"" + escaped + "\"";
+}
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -36,7 +54,8 @@ MainWindow::MainWindow(QWidget *parent)
     applyStyles();
 
     QString defaultPath = QApplication::applicationDirPath() + "/data/mac_database.txt";
-    ouiDb.load(defaultPath);
+    const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    ouiDb.load(defaultPath, true, cacheDir);
     statusLabel->setText(tr("已加载 %1 条记录").arg(ouiDb.size()));
 
     m_deviceMac = getAdapterMac();
@@ -336,22 +355,53 @@ void MainWindow::onScanFinished(const QList<NetworkDevice> &devices) {
     for (auto &dev : enrichedDevices)
         lookupManufacturer(dev);
 
-    // Clear and rebuild lists
-    lanList->clear();
-    wifiList->clear();
+    lanList->setUpdatesEnabled(false);
+    wifiList->setUpdatesEnabled(false);
+    const int lanScroll = lanList->verticalScrollBar()->value();
+    const int wifiScroll = wifiList->verticalScrollBar()->value();
 
-    for (const NetworkDevice &dev : enrichedDevices) {
-        QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
+    // Diff update: reuse cards for known devices, only add/remove changes.
+    auto updateList = [&](QListWidget *list, DeviceType type) {
+        QHash<QString, QListWidgetItem*> existing;
+        for (int i = 0; i < list->count(); ++i) {
+            QListWidgetItem *item = list->item(i);
+            existing.insert(item->data(Qt::UserRole).toString(), item);
+        }
 
-        QWidget *card = DeviceCardFactory::createCard(dev, darkMode);
-        QListWidgetItem *item = new QListWidgetItem();
-        item->setData(Qt::UserRole, key);
-        item->setSizeHint(card->sizeHint());
+        QSet<QString> seen;
+        for (const NetworkDevice &dev : enrichedDevices) {
+            if (dev.type != type) continue;
 
-        QListWidget *targetList = (dev.type == Lan) ? lanList : wifiList;
-        targetList->addItem(item);
-        targetList->setItemWidget(item, card);
-    }
+            const QString key = dev.type + ":" + (dev.mac.isEmpty() ? dev.ip : dev.mac);
+            seen.insert(key);
+
+            QListWidgetItem *item = existing.value(key, nullptr);
+            if (item) {
+                DeviceCardFactory::updateCard(list->itemWidget(item), dev);
+                continue;
+            }
+
+            QWidget *card = DeviceCardFactory::createCard(dev, darkMode);
+            QListWidgetItem *newItem = new QListWidgetItem();
+            newItem->setData(Qt::UserRole, key);
+            newItem->setSizeHint(card->sizeHint());
+            list->addItem(newItem);
+            list->setItemWidget(newItem, card);
+        }
+
+        for (auto it = existing.constBegin(); it != existing.constEnd(); ++it) {
+            if (!seen.contains(it.key()))
+                delete list->takeItem(list->row(it.value()));
+        }
+    };
+
+    updateList(lanList, Lan);
+    updateList(wifiList, WiFi);
+
+    lanList->verticalScrollBar()->setValue(lanScroll);
+    wifiList->verticalScrollBar()->setValue(wifiScroll);
+    lanList->setUpdatesEnabled(true);
+    wifiList->setUpdatesEnabled(true);
 
     int lanCount = lanList->count();
     int wifiCount = wifiList->count();
@@ -489,10 +539,10 @@ void MainWindow::exportResults() {
             QString type = key.startsWith("LAN:") ? "LAN" : "WiFi";
 
             out << type << ","
-                << (ipLbl ? ipLbl->text() : "") << ","
-                << (macLbl ? macLbl->text() : "") << ","
-                << (signalLbl ? signalLbl->text() : "") << ","
-                << (vendorLbl ? vendorLbl->text() : "") << "\n";
+                << csvEscape(ipLbl ? ipLbl->text() : "") << ","
+                << csvEscape(macLbl ? macLbl->text() : "") << ","
+                << csvEscape(signalLbl ? signalLbl->text() : "") << ","
+                << csvEscape(vendorLbl ? vendorLbl->text() : "") << "\n";
         }
     };
     exportList(lanList);

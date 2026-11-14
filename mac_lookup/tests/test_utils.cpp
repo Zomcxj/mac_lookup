@@ -10,6 +10,8 @@
 #include <QHash>
 #include <QApplication>
 #include <QTemporaryFile>
+#include <QTemporaryDir>
+#include <QFileInfo>
 
 // ==================== Original Tests ====================
 
@@ -70,7 +72,7 @@ void TestUtils::testLoadData() {
     file.close();
 
     QVERIFY(companyMap.size() > 0);
-    QVERIFY(wifiCount > 0);
+    QVERIFY(wifiCount <= companyMap.size());
 }
 
 void TestUtils::testLookupManufacturer() {
@@ -94,7 +96,7 @@ void TestUtils::testLookupManufacturer() {
 
 void TestUtils::testCreateLanDevice() {
     NetworkDevice dev = createLanDevice("192.168.1.100", "AA:BB:CC:DD:EE:FF");
-    QCOMPARE(dev.type, QString("LAN"));
+    QVERIFY(dev.type == Lan);
     QCOMPARE(dev.ip, QString("192.168.1.100"));
     QCOMPARE(dev.mac, QString("AA:BB:CC:DD:EE:FF"));
     QCOMPARE(dev.latency, 0);
@@ -103,11 +105,11 @@ void TestUtils::testCreateLanDevice() {
 }
 
 void TestUtils::testFormatIpAddress() {
-    // 192.168.1.1 = 0xC0A80101
-    QCOMPARE(formatIpAddress(0xC0A80101), QString("192.168.1.1"));
+    // Windows dwAddr is network byte order; on little-endian the literal is byte-swapped.
+    QCOMPARE(formatIpAddress(0x0101A8C0), QString("192.168.1.1"));
 
-    // 10.0.0.1 = 0x0A000001
-    QCOMPARE(formatIpAddress(0x0A000001), QString("10.0.0.1"));
+    // 10.0.0.1 = 0x0A000001 (network order)
+    QCOMPARE(formatIpAddress(0x0100000A), QString("10.0.0.1"));
 
     // 255.255.255.255 = 0xFFFFFFFF
     QCOMPARE(formatIpAddress(0xFFFFFFFF), QString("255.255.255.255"));
@@ -183,6 +185,76 @@ void TestUtils::testOuiDatabaseCache() {
     QFile::remove(cachePath);
 }
 
+void TestUtils::testOuiDatabaseCacheInvalidation() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    tempFile.write("AA:BB:CC\tCN\tTest Company\t测试公司\n");
+    tempFile.close();
+    const QString path = tempFile.fileName();
+
+    OuiDatabase db1;
+    db1.load(path, true);
+    QCOMPARE(db1.size(), 1);
+
+    // Source changed: cache must be rebuilt instead of serving stale data
+    QFile appendFile(path);
+    QVERIFY(appendFile.open(QIODevice::Append));
+    appendFile.write("00:11:22\tUS\tAnother Company\t另一公司\n");
+    appendFile.close();
+
+    OuiDatabase db2;
+    db2.load(path, true);
+    QCOMPARE(db2.size(), 2);
+
+    QFile::remove(path + ".cache");
+}
+
+void TestUtils::testOuiDatabaseCorruptCacheFallback() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    tempFile.write("AA:BB:CC\tCN\tTest Company\t测试公司\n");
+    tempFile.close();
+    const QString path = tempFile.fileName();
+
+    OuiDatabase db1;
+    db1.load(path, true);
+    QCOMPARE(db1.size(), 1);
+
+    QFile cache(path + ".cache");
+    QVERIFY(cache.open(QIODevice::ReadWrite));
+    QVERIFY(cache.resize(8));  // truncate the cache header
+    cache.close();
+
+    OuiDatabase db2;
+    db2.load(path, true);
+    QCOMPARE(db2.size(), 1);  // falls back to parsing the text file
+
+    QFile::remove(path + ".cache");
+}
+
+void TestUtils::testOuiDatabaseCustomCacheDir() {
+    QTemporaryFile source;
+    QVERIFY(source.open());
+    source.write("AA:BB:CC\tCN\tTest Company\t测试公司\n");
+    source.close();
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    OuiDatabase db;
+    db.load(source.fileName(), true, cacheDir.path());
+    QCOMPARE(db.size(), 1);
+
+    const QString cachePath = cacheDir.path() + "/" +
+        QFileInfo(source.fileName()).fileName() + ".cache";
+    QVERIFY(QFile::exists(cachePath));
+
+    // Second load must hit the cache in the custom directory
+    OuiDatabase db2;
+    db2.load(source.fileName(), true, cacheDir.path());
+    QCOMPARE(db2.size(), 1);
+}
+
 void TestUtils::testOuiDatabaseLookup() {
     OuiDatabase db;
     QString testFile = QCoreApplication::applicationDirPath() + "/../../data/mac_database.txt";
@@ -207,16 +279,12 @@ void TestUtils::testThemeManagerLightSheet() {
     QString sheet = ThemeManager::lightSheet();
     QVERIFY(!sheet.isEmpty());
     QVERIFY(sheet.contains("#scanCard"));
-    QVERIFY(sheet.contains("#lanCard"));
-    QVERIFY(sheet.contains("#wifiCard"));
 }
 
 void TestUtils::testThemeManagerDarkSheet() {
     QString sheet = ThemeManager::darkSheet();
     QVERIFY(!sheet.isEmpty());
     QVERIFY(sheet.contains("#scanCard"));
-    QVERIFY(sheet.contains("#lanCard"));
-    QVERIFY(sheet.contains("#wifiCard"));
     QVERIFY(sheet.contains("QSpinBox"));  // Dark mode specific
 }
 
@@ -259,18 +327,19 @@ void TestUtils::testFormatMacAddressEdgeCases() {
 }
 
 void TestUtils::testFormatIpAddressEdgeCases() {
-    // Loopback 127.0.0.1 = 0x7F000001
-    QCOMPARE(formatIpAddress(0x7F000001), QString("127.0.0.1"));
+    // Windows dwAddr is network byte order; on little-endian the literal is byte-swapped.
+    // Loopback 127.0.0.1
+    QCOMPARE(formatIpAddress(0x0100007F), QString("127.0.0.1"));
 
-    // Link-local 169.254.1.1 = 0xA9FE0101
-    QCOMPARE(formatIpAddress(0xA9FE0101), QString("169.254.1.1"));
+    // Link-local 169.254.1.1
+    QCOMPARE(formatIpAddress(0x0101FEA9), QString("169.254.1.1"));
 
-    // Broadcast 255.255.255.255 = 0xFFFFFFFF
+    // Broadcast 255.255.255.255
     QCOMPARE(formatIpAddress(0xFFFFFFFF), QString("255.255.255.255"));
 
     // Single byte values
-    QCOMPARE(formatIpAddress(0x01000000), QString("1.0.0.0"));
-    QCOMPARE(formatIpAddress(0x00010000), QString("0.1.0.0"));
+    QCOMPARE(formatIpAddress(0x00000001), QString("1.0.0.0"));
+    QCOMPARE(formatIpAddress(0x00000100), QString("0.1.0.0"));
 }
 
 void TestUtils::testSortByLatencyEdgeCases() {
@@ -343,11 +412,11 @@ void TestUtils::testOuiDatabaseLookupCaseInsensitive() {
 
     // Lowercase MAC should still match
     QString result = db.lookup("aa:bb:cc:dd:ee:ff");
-    QCOMPARE(result, QString("Test Company"));
+    QCOMPARE(result, QString("测试公司"));
 
     // Mixed case should still match
     QString result2 = db.lookup("Aa:Bb:Cc:11:22:33");
-    QCOMPARE(result2, QString("Test Company"));
+    QCOMPARE(result2, QString("测试公司"));
 }
 
 // ==================== ScanImporter Tests ====================

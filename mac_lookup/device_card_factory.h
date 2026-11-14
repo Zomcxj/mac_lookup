@@ -8,6 +8,7 @@
 class DeviceCardFactory {
 public:
     static QWidget* createCard(const NetworkDevice &dev, bool isDark);
+    static void updateCard(QWidget *card, const NetworkDevice &dev);
     static void updateAllStyles(QListWidget *lanList, QListWidget *wifiList, bool isDark);
 };
 

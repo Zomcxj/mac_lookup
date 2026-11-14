@@ -26,6 +26,9 @@ private slots:
     // OuiDatabase tests
     void testOuiDatabaseLoad();
     void testOuiDatabaseCache();
+    void testOuiDatabaseCacheInvalidation();
+    void testOuiDatabaseCorruptCacheFallback();
+    void testOuiDatabaseCustomCacheDir();
     void testOuiDatabaseLookup();
     void testOuiDatabaseLookupCaseInsensitive();
 
